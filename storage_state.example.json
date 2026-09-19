@@ -1,0 +1,55 @@
+{
+  "cookies": [
+    {
+      "name": "SID",
+      "value": "YOUR_GOOGLE_SID_COOKIE_HERE",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1780000000,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "HSID",
+      "value": "YOUR_GOOGLE_HSID_COOKIE_HERE",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1780000000,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "SSID",
+      "value": "YOUR_GOOGLE_SSID_COOKIE_HERE",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1780000000,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Secure-1PSID",
+      "value": "YOUR_GOOGLE_SECURE_1PSID_COOKIE_HERE",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1780000000,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Secure-3PSID",
+      "value": "YOUR_GOOGLE_SECURE_3PSID_COOKIE_HERE",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1780000000,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

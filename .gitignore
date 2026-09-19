@@ -1,0 +1,81 @@
+# ==============================================================================
+# Security & Authentication (STRICT: NEVER COMMIT AUTH COOKIES OR SECRETS)
+# ==============================================================================
+storage_state.json
+storage_state.json:*
+*storage_state*.json*
+bridge/storage_state.json
+*.env
+.env
+.env.*
+!.env.example
+!storage_state.example.json
+*.pem
+*.key
+*.cert
+
+# ==============================================================================
+# Runtime Outputs & Media Artifacts (Heavy Files, Reports & Audio)
+# ==============================================================================
+output/*
+!output/.gitkeep
+!output/reports/
+output/reports/*
+!output/reports/.gitkeep
+!output/charts/
+output/charts/*
+!output/charts/.gitkeep
+!output/podcasts/
+output/podcasts/*
+!output/podcasts/.gitkeep
+bridge/output/*
+bridge/output/
+*.mp3
+*.m4a
+*.wav
+*.png
+*.jpg
+*.jpeg
+!docs/images/*.png
+!docs/images/*.jpg
+
+# ==============================================================================
+# Python & Node Cache
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+node_modules/
+
+# ==============================================================================
+# OS & Editor Artifacts
+# ==============================================================================
+.DS_Store
+Thumbs.db
+*Zone.Identifier
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

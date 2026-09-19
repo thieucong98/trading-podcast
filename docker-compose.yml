@@ -1,0 +1,60 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: trading-podcast-n8n
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
+      - TZ=Asia/Ho_Chi_Minh
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      - ./output:/files:rw
+      - ./n8n/workflows:/workflows:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - trading_podcast_net
+      - tradingagents_default
+
+  trading-podcast-bridge:
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    container_name: trading-podcast-bridge
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8010:8010"
+    environment:
+      - OUTPUT_DIR=/app/output
+      - NOTEBOOKLM_STORAGE_STATE=/app/storage_state.json
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./bridge:/app/bridge
+      - ./output:/app/output
+      - ./storage_state.json:/app/storage_state.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - trading_podcast_net
+      - tradingagents_default
+
+volumes:
+  n8n_storage:
+
+networks:
+  trading_podcast_net:
+    driver: bridge
+  tradingagents_default:
+    external: true
