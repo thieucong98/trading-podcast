@@ -80,7 +80,7 @@ workflow = {
             "name": "Schedule Trigger (7:00 AM Weekdays)",
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1.2,
-            "position": [200, 240]
+            "position": [200, 200]
         },
         {
             "parameters": {},
@@ -88,7 +88,7 @@ workflow = {
             "name": "Manual Trigger (Run On-Demand)",
             "type": "n8n-nodes-base.manualTrigger",
             "typeVersion": 1,
-            "position": [200, 420]
+            "position": [200, 360]
         },
         {
             "parameters": {
@@ -97,12 +97,26 @@ workflow = {
                 "responseMode": "lastNode",
                 "options": {}
             },
-            "id": "webhook-trigger-1",
-            "name": "Webhook Trigger",
+            "id": "webhook-trigger-get",
+            "name": "Webhook Trigger (GET)",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2,
-            "position": [200, 600],
+            "position": [200, 520],
             "webhookId": "run-trading-podcast"
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "run-trading-podcast",
+                "responseMode": "lastNode",
+                "options": {}
+            },
+            "id": "webhook-trigger-post",
+            "name": "Webhook Trigger (POST)",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [200, 680],
+            "webhookId": "run-trading-podcast-post"
         },
         {
             "parameters": {
@@ -111,67 +125,67 @@ workflow = {
                         {
                             "id": "setting-force-reanalyze",
                             "name": "force_reanalyze",
-                            "value": False,
+                            "value": "={{ [ $json?.body?.force_reanalyze, $json?.body?.force_analysis, $json?.body?.forceReanalyze, $json?.body?.reanalyze, $json?.query?.force_reanalyze, $json?.query?.force_analysis, $json?.query?.forceReanalyze, $json?.query?.reanalyze ].some(v => v === true || v === 'true' || v === 1 || v === '1') }}",
                             "type": "boolean"
                         },
                         {
                             "id": "setting-force-recapture",
                             "name": "force_recapture_charts",
-                            "value": False,
+                            "value": "={{ [ $json?.body?.force_recapture_charts, $json?.body?.force_recapture, $json?.body?.force_capture, $json?.body?.forceRecapture, $json?.body?.forceCapture, $json?.body?.recapture, $json?.query?.force_recapture_charts, $json?.query?.force_recapture, $json?.query?.force_capture, $json?.query?.forceRecapture, $json?.query?.forceCapture, $json?.query?.recapture ].some(v => v === true || v === 'true' || v === 1 || v === '1') }}",
                             "type": "boolean"
                         },
                         {
                             "id": "setting-provider",
                             "name": "llm_provider",
-                            "value": "openai_compatible",
+                            "value": "={{ $json?.body?.llm_provider || $json?.query?.llm_provider || 'openai_compatible' }}",
                             "type": "string"
                         },
                         {
                             "id": "setting-deep-think",
                             "name": "deep_think_llm",
-                            "value": "ag/gemini-3.8-flash-high",
+                            "value": "={{ $json?.body?.deep_think_llm || $json?.query?.deep_think_llm || 'ag/gemini-3.8-flash-high' }}",
                             "type": "string"
                         },
                         {
                             "id": "setting-quick-think",
                             "name": "quick_think_llm",
-                            "value": "ag/gemini-3.8-flash-high",
+                            "value": "={{ $json?.body?.quick_think_llm || $json?.query?.quick_think_llm || 'ag/gemini-3.8-flash-high' }}",
                             "type": "string"
                         },
                         {
                             "id": "setting-debate-rounds",
                             "name": "max_debate_rounds",
-                            "value": 3,
+                            "value": "={{ $json?.body?.max_debate_rounds ? Number($json.body.max_debate_rounds) : ($json?.query?.max_debate_rounds ? Number($json.query.max_debate_rounds) : 3) }}",
                             "type": "number"
                         },
                         {
                             "id": "setting-risk-rounds",
                             "name": "max_risk_discuss_rounds",
-                            "value": 3,
+                            "value": "={{ $json?.body?.max_risk_discuss_rounds ? Number($json.body.max_risk_discuss_rounds) : ($json?.query?.max_risk_discuss_rounds ? Number($json.query.max_risk_discuss_rounds) : 3) }}",
                             "type": "number"
                         },
                         {
                             "id": "setting-language",
                             "name": "output_language",
-                            "value": "Vietnamese",
+                            "value": "={{ $json?.body?.output_language || $json?.query?.output_language || 'Vietnamese' }}",
                             "type": "string"
                         },
                         {
                             "id": "setting-tickers",
                             "name": "tickers",
-                            "value": '={{ ["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB"] }}',
+                            "value": '={{ $json?.body?.tickers || ($json?.query?.tickers ? (typeof $json.query.tickers === "string" ? $json.query.tickers.split(",").map(s => s.trim()) : $json.query.tickers) : ["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB"]) }}',
                             "type": "array"
                         },
                         {
                             "id": "setting-chart-symbols",
                             "name": "chart_symbols",
-                            "value": '={{ ["XAUUSD", "XAGUSD"] }}',
+                            "value": '={{ $json?.body?.chart_symbols || ($json?.query?.chart_symbols ? (typeof $json.query.chart_symbols === "string" ? $json.query.chart_symbols.split(",").map(s => s.trim()) : $json.query.chart_symbols) : ["XAUUSD", "XAGUSD"]) }}',
                             "type": "array"
                         },
                         {
                             "id": "setting-chart-intervals",
                             "name": "chart_intervals",
-                            "value": '={{ ["5", "15", "60", "240", "D", "W"] }}',
+                            "value": '={{ $json?.body?.chart_intervals || ($json?.query?.chart_intervals ? (typeof $json.query.chart_intervals === "string" ? $json.query.chart_intervals.split(",").map(s => s.trim()) : $json.query.chart_intervals) : ["5", "15", "60", "240", "D", "W"]) }}',
                             "type": "array"
                         },
                         {
@@ -188,7 +202,7 @@ workflow = {
             "name": "Global Pipeline Settings",
             "type": "n8n-nodes-base.set",
             "typeVersion": 3.4,
-            "position": [480, 420]
+            "position": [520, 440]
         },
         {
             "parameters": {
@@ -304,7 +318,18 @@ workflow = {
                 ]
             ]
         },
-        "Webhook Trigger": {
+        "Webhook Trigger (GET)": {
+            "main": [
+                [
+                    {
+                        "node": "Global Pipeline Settings",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Trigger (POST)": {
             "main": [
                 [
                     {

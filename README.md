@@ -103,13 +103,47 @@ Kết quả trả về hợp lệ:
   - Thiết lập tài khoản admin ban đầu khi mở n8n hoặc cấu hình qua biến môi trường `N8N_ADMIN_EMAIL` và `N8N_ADMIN_PASSWORD` trong file `.env`.
 * Workflow **`Trading Podcast AI Pipeline - Daily Studio Audio`** đã được cấu hình sẵn và kích hoạt (Active / Published).
 
-### 5. Kích hoạt Thực thi (Execution Triggers)
-* **Kích hoạt tự động:** Tự động chạy vào lúc **07:00 AM các ngày làm việc (Thứ 2 - Thứ 6)**.
-* **Kích hoạt tức thì qua Webhook URL:**
+### 5. Kích hoạt Thực thi & Tùy biến Tham số Từ Xa (Remote Webhook Parameters)
+Hệ thống hỗ trợ kích hoạt linh hoạt qua cả **GET (Query Parameters)** và **POST (JSON Body)**. Mặc định mọi cờ ép chạy lại đều là `false` để tận dụng bộ nhớ đệm tốc độ cao (0.5s), nhưng bạn có thể truyền tham số để ghi đè từ xa mà không cần truy cập vào giao diện n8n:
+
+* **Kích hoạt mặc định (Dùng cache nếu đã phân tích trong ngày):**
   ```bash
   curl -s http://localhost:5678/webhook/run-trading-podcast
   ```
-* **Kích hoạt thủ công:** Nhấn nút **Execute workflow** trên giao diện Canvas n8n.
+
+* **Ép chụp lại mới toàn bộ 12 khung biểu đồ nến kỹ thuật (`force_recapture=true`):**
+  ```bash
+  # Qua GET query string:
+  curl -s "http://localhost:5678/webhook/run-trading-podcast?force_recapture=true"
+
+  # Hoặc qua POST JSON body:
+  curl -s -X POST "http://localhost:5678/webhook/run-trading-podcast" \
+    -H "Content-Type: application/json" \
+    -d '{"force_recapture": true}'
+  ```
+
+* **Ép AI TradingAgents phân tích lại phiên mới (`force_reanalyze=true`):**
+  ```bash
+  curl -s "http://localhost:5678/webhook/run-trading-podcast?force_reanalyze=true"
+  ```
+
+* **Ép làm mới toàn diện cả Báo cáo Phân tích và Biểu đồ nến:**
+  ```bash
+  curl -s -X POST "http://localhost:5678/webhook/run-trading-podcast" \
+    -H "Content-Type: application/json" \
+    -d '{"force_reanalyze": true, "force_recapture": true}'
+  ```
+
+* **Kiểm thử trên giao diện n8n Test URL (`webhook-test`):**
+  Khi đang mở giao diện n8n và bấm *"Listen for test event"*, bạn có thể kiểm thử bằng đường dẫn:
+  ```bash
+  curl -s "http://localhost:5678/webhook-test/run-trading-podcast?force_recapture=true"
+  ```
+
+* **Bảng bí danh tham số (Aliases hỗ trợ):**
+  - Ép phân tích: `force_reanalyze`, `force_analysis`, `reanalyze`, `forceReanalyze` (chấp nhận `true`, `1`, `"true"`).
+  - Ép chụp nến: `force_recapture_charts`, `force_recapture`, `force_capture`, `recapture` (chấp nhận `true`, `1`, `"true"`).
+  - Tùy chỉnh model từ xa: `llm_provider`, `deep_think_llm`, `quick_think_llm`, `tickers`...
 
 ---
 

@@ -98,16 +98,47 @@ class NotebookLMClient:
                 ["notebooklm", "create", title, "--json"],
                 capture_output=True,
                 text=True,
-                check=True,
+                check=False,
             )
-            create_data = json.loads(create_res.stdout)
+            if create_res.returncode != 0:
+                err_msg = (create_res.stderr or create_res.stdout or "").strip()
+                logger.warning(f"NotebookLM create failed (exit {create_res.returncode}): {err_msg}")
+                return {
+                    "status": "auth_expired",
+                    "notebook_id": "auth_required",
+                    "notebook_title": title,
+                    "notebook_url": "https://notebooklm.google.com",
+                    "sources_count": 0,
+                    "report_sources_count": len(report_md_paths),
+                    "chart_sources_count": len(chart_image_paths),
+                    "sources": [],
+                    "message": "Google NotebookLM session expired or invalid. Please update storage_state.json with fresh cookies.",
+                    "error_detail": err_msg,
+                }
+            try:
+                create_data = json.loads(create_res.stdout) if create_res.stdout else {}
+            except Exception as e:
+                logger.warning(f"Failed parsing create json: {e}")
+                create_data = {}
+
             target_nid = (
                 create_data.get("notebook", {}).get("id")
                 or create_data.get("id")
                 or create_data.get("notebook_id")
             )
             if not target_nid:
-                raise RuntimeError(f"Failed to extract notebook ID from: {create_res.stdout}")
+                logger.warning(f"Could not extract notebook ID from: {create_res.stdout}")
+                return {
+                    "status": "auth_expired",
+                    "notebook_id": "auth_required",
+                    "notebook_title": title,
+                    "notebook_url": "https://notebooklm.google.com",
+                    "sources_count": 0,
+                    "report_sources_count": len(report_md_paths),
+                    "chart_sources_count": len(chart_image_paths),
+                    "sources": [],
+                    "message": "Failed to create notebook on NotebookLM. Please check storage_state.json",
+                }
             logger.info(f"Successfully created Notebook ID: {target_nid}")
 
         uploaded_sources = []
@@ -202,10 +233,12 @@ class NotebookLMClient:
         final_audio_path = out_dir / f"trading_podcast_{date_str}.mp3"
 
         has_auth = self.is_authenticated()
+        target_nid = notebook_id
+        if target_nid in ("auth_required", "offline_ready"):
+            has_auth = False
 
         if has_auth and shutil.which("notebooklm"):
             try:
-                target_nid = notebook_id
                 if not target_nid and briefing_md_path:
                     upload_res = await self.upload_sources_to_notebooklm(
                         briefing_md_path=briefing_md_path,
