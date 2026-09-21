@@ -6,10 +6,15 @@ Hệ thống tự động hóa toàn diện quy trình sản xuất **Podcast Ph
 
 ## 📸 Giao diện Quy trình Trực quan (Verified Architecture)
 
-### 1. Sơ đồ luồng xử lý trên Canvas n8n (10 Nodes chuẩn mực)
+### 1. Sơ đồ luồng xử lý trên Canvas n8n (11 Nodes Chuẩn mực & Đã Kích hoạt Published)
 ![n8n Workflow Canvas](docs/images/n8n_staged_workflow_canvas.png)
 
-### 2. Kết quả Thực thi Thực tế (Execution Succeeded 100%)
+### 2. Chi tiết Cấu hình Webhook Triggers & Tham số Động
+| Cấu hình Webhook Trigger (GET & POST) | Cấu hình Tham số Động tại Settings Node |
+| :---: | :---: |
+| ![n8n Webhook Modal](docs/images/n8n_webhook_modal_verified.png) | ![n8n Settings Modal](docs/images/n8n_settings_modal_verified.png) |
+
+### 3. Kết quả Thực thi Thực tế (Execution Succeeded 100%)
 ![n8n Execution Succeeded](docs/images/n8n_staged_execution_success.png)
 
 ---
