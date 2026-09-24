@@ -164,7 +164,7 @@
         "specifyBody": "json",
         "jsonBody": "={\n  \"tickers\": {{ JSON.stringify($('Global Pipeline Settings').first().json.tickers) }},\n  \"tradingagents_backend_url\": \"http://tradingagents-backend:8000\",\n  \"llm_provider\": {{ JSON.stringify($('Global Pipeline Settings').first().json.llm_provider) }},\n  \"deep_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.deep_think_llm) }},\n  \"quick_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.quick_think_llm) }},\n  \"max_debate_rounds\": {{ $('Global Pipeline Settings').first().json.max_debate_rounds }},\n  \"max_risk_discuss_rounds\": {{ $('Global Pipeline Settings').first().json.max_risk_discuss_rounds }},\n  \"output_language\": {{ JSON.stringify($('Global Pipeline Settings').first().json.output_language) }},\n  \"force_reanalyze\": {{ $('Global Pipeline Settings').first().json.force_reanalyze }}\n}",
         "options": {
-          "timeout": 600000
+          "timeout": 1800000
         }
       },
       "id": "http-analyze-markets",

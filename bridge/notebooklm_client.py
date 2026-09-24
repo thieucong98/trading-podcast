@@ -307,7 +307,7 @@ class NotebookLMClient:
 
     def _generate_guidance_fallback(
         self,
-        briefing_md_path: str,
+        briefing_md_path: str | None,
         chart_image_paths: list[str],
         prompt: str,
         date_str: str,
@@ -318,6 +318,13 @@ class NotebookLMClient:
         """Provide detailed guidance, mock artifact, and instructions when credentials are being set up."""
         logger.info("Generating podcast package and NotebookLM preparation instructions...")
 
+        resolved_briefing = ""
+        if briefing_md_path and str(briefing_md_path).strip():
+            try:
+                resolved_briefing = str(Path(briefing_md_path).resolve())
+            except Exception:
+                resolved_briefing = str(briefing_md_path)
+
         # Create a metadata bundle file
         bundle_info = {
             "title": f"Trading Daily Podcast - {date_str}",
@@ -325,7 +332,7 @@ class NotebookLMClient:
             "status": "sources_prepared_ready_for_upload",
             "language": "Vietnamese (Tiếng Việt)",
             "studio_prompt": prompt,
-            "briefing_document": str(Path(briefing_md_path).resolve()),
+            "briefing_document": resolved_briefing,
             "chart_sources": [str(Path(p).resolve()) for p in chart_image_paths if Path(p).exists()],
             "how_to_connect_google_credentials": [
                 "Cách 1 (Tự động hóa hoàn toàn): Đăng nhập Google Chrome trên máy, cài tiện ích Get cookies.txt hoặc dùng lệnh `notebooklm login` để sinh file storage_state.json và đặt vào thư mục trading-podcast/storage_state.json.",
@@ -340,6 +347,7 @@ class NotebookLMClient:
 
         # Also create a placeholder podcast script markdown for manual review
         script_path = final_audio_path.with_name(f"podcast_script_{date_str}.md")
+        briefing_text = f"1. Văn bản tóm tắt: `{resolved_briefing}`\n" if resolved_briefing else "1. Báo cáo phân tích chuyên sâu từng tài sản\n"
         script_content = f"""# KỊCH BẢN PODCAST CHI TIẾT - NGÀY {date_str}
 
 **Chủ đề:** Nhận định Vàng (XAUUSD), Bạc (XAGUSD), SPY và Bitcoin (BTC-USD)
@@ -347,8 +355,7 @@ class NotebookLMClient:
 {prompt}
 
 ## Danh sách file nguồn đã sẵn sàng upload lên NotebookLM:
-1. Văn bản tóm tắt: `{Path(briefing_md_path).resolve()}`
-2. Biểu đồ kỹ thuật:
+{briefing_text}2. Biểu đồ kỹ thuật:
 """
         for p in chart_image_paths:
             script_content += f"- `{Path(p).resolve()}`\n"
@@ -360,12 +367,13 @@ class NotebookLMClient:
             "provider": "notebooklm_ready",
             "date": date_str,
             "prompt_used": prompt,
-            "briefing_file": str(Path(briefing_md_path).resolve()),
+            "briefing_file": resolved_briefing,
             "chart_files": [str(Path(p).resolve()) for p in chart_image_paths],
             "metadata_file": str(meta_path.resolve()),
             "script_file": str(script_path.resolve()),
             "instructions": bundle_info["how_to_connect_google_credentials"],
         }
+
 
 
 notebooklm_client = NotebookLMClient()

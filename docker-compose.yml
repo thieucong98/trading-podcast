@@ -40,6 +40,10 @@ services:
       - OUTPUT_DIR=/app/output
       - NOTEBOOKLM_STORAGE_STATE=/app/storage_state.json
       - PYTHONUNBUFFERED=1
+      - DEFAULT_LLM_PROVIDER=openai_compatible
+      - DEFAULT_DEEP_THINK_LLM=ag/gemini-3.8-flash-high
+      - DEFAULT_QUICK_THINK_LLM=ag/gemini-3.8-flash-high
+      - TRADINGAGENTS_BACKEND_URL=http://tradingagents-backend:8000
     volumes:
       - ./bridge:/app/bridge
       - ./output:/app/output

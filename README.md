@@ -35,10 +35,19 @@ flowchart LR
 
 ### Điểm đột phá về kiến trúc dữ liệu:
 * **Tải nguyên bản 100% "Completed Report" Markdown:** Thay vì tự động tóm tắt làm mất đi 95% dữ liệu quan trọng, hệ thống tự động tải trực tiếp toàn văn báo cáo phân tích hoàn chỉnh của từng mã (`XAUUSD`, `SPY`, `BTC-USD`, `XAGUSD`, `^TNX`, `DX-Y.NYB`) với dung lượng **150.000 – 215.000 ký tự mỗi mã** (tương đương khi bấm nút **Download MD** trên web frontend 5173).
+* **Cam kết Chất lượng Tuyệt đối (Zero Dummy Data Guarantee):**
+  - Loại bỏ hoàn toàn cơ chế sinh báo cáo placeholder ("Quan sát kỹ thuật") khi quá thời gian chờ.
+  - Mỗi tệp markdown hoàn thành bắt buộc phải vượt qua bài kiểm tra toàn vẹn (dung lượng > 1,000 bytes và chứa nội dung phân tích thực tế từ backend).
+  - Nếu bất kỳ mã nào gặp sự cố sau các lần thử lại, hệ thống sẽ trả về lỗi HTTP 500 kèm chi tiết chẩn đoán, dừng pipeline ngay tại node phân tích để bảo vệ NotebookLM khỏi việc nạp dữ liệu rác.
+* **Cơ chế Smart Caching & Job Adoption (Tái sử dụng & Nối tiến trình thông minh):**
+  - **Tái sử dụng tức thì:** Khi `force_reanalyze=false`, hệ thống rà quét backend để tìm các job đã hoàn thành trong ngày hôm nay. Các báo cáo hợp lệ sẽ được nạp lại trong **0.05 giây** mà không cần chạy lại từ đầu.
+  - **Nối tiến trình (Job Adoption):** Nếu một job đang chạy dở dang trên backend, bridge service sẽ tự động bắt lấy `job_id` đó để tiếp tục theo dõi tiến độ thay vì khởi tạo một job trùng lặp gây lãng phí tài nguyên tính toán.
+  - **Tự động thử lại (Auto-Retry with Backoff):** Nếu một job gặp lỗi gián đoạn mạng tạm thời (như Cloudflare 524 Read Timeout từ LLM gateway), bridge sẽ tự động thử lại tối đa 2 lần với cơ chế lùi thời gian (exponential backoff).
 * **18 nguồn tri thức nạp trực tiếp vào NotebookLM:**
   - **6 tệp Báo cáo chuyên sâu (Markdown):** Đầy đủ 4 góc nhìn phân tích (Kỹ thuật, Tâm lý, Vĩ mô, Cơ bản), trọn vẹn 3 vòng tranh biện Bull/Bear debate, và quyết định quản trị rủi ro từ Portfolio Manager.
   - **12 tệp Biểu đồ nến TradingView (PNG Dark Theme):** Đầy đủ các khung giờ từ Scalping đến Xu hướng chính (`5m`, `15m`, `1H`, `4H`, `1D`, `1W`) cho cả Vàng (`XAUUSD`) và Bạc (`XAGUSD`).
 * **Hai MC AI đối thoại giàu chiều sâu:** Google NotebookLM tiếp nhận trọn vẹn 18 nguồn, giúp kịch bản thảo luận có dẫn chứng số liệu giá chính xác, nhận diện mô hình nến rõ ràng và đưa ra kế hoạch giao dịch tự tin như hai Senior Trader tại bàn Trade Desk.
+
 
 ---
 
