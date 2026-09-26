@@ -43,9 +43,10 @@ async def capture_single_chart(
     output_dir: Path,
     width: int = 1920,
     height: int = 1080,
-    timeout_ms: int = 25000,
+    timeout_ms: int = 30000,
+    max_retries: int = 2,
 ) -> dict[str, Any]:
-    """Capture a single TradingView chart using the embed widget."""
+    """Capture a single TradingView chart using the embed widget with retry resilience."""
     clean_symbol = SYMBOL_MAP.get(symbol.upper(), symbol)
     tf_label = TIMEFRAME_LABELS.get(str(interval), str(interval))
     filename = f"{sanitize_filename(symbol)}_{tf_label}.png"
@@ -57,25 +58,70 @@ async def capture_single_chart(
         f"&timezone=Etc%2FUTC&locale=en"
     )
 
-    page = await browser_context.new_page()
-    await page.set_viewport_size({"width": width, "height": height})
+    last_error = None
+    for attempt in range(max_retries + 1):
+        page = None
+        try:
+            page = await browser_context.new_page()
+            await page.set_viewport_size({"width": width, "height": height})
+            logger.info(
+                f"Capturing {symbol} ({interval}) via {widget_url} (attempt {attempt + 1}/{max_retries + 1})"
+            )
 
-    try:
-        logger.info(f"Capturing {symbol} ({interval}) via {widget_url}")
-        await page.goto(widget_url, wait_until="networkidle", timeout=timeout_ms)
-        # Give TradingView canvas 2.5s to render the candlesticks smoothly
-        await asyncio.sleep(2.5)
+            # Use domcontentloaded for fast, reliable load without hanging on continuous WebSocket tickers
+            await page.goto(widget_url, wait_until="domcontentloaded", timeout=timeout_ms)
 
-        # Check for chart container or take full viewport
-        chart_element = await page.query_selector("div.chart-container, div.tv-embed-widget-wrapper, body")
-        if chart_element:
-            await chart_element.screenshot(path=str(filepath))
-        else:
-            await page.screenshot(path=str(filepath))
+            # Wait for chart widget container or canvas to appear
+            try:
+                await page.wait_for_selector(
+                    "div.chart-container, div.tv-embed-widget-wrapper, canvas, #tv_chart_container",
+                    timeout=12000,
+                )
+            except Exception as wait_err:
+                logger.warning(f"Timeout waiting for chart selector on {symbol} ({interval}): {wait_err}")
 
-        file_size = os.path.getsize(filepath) if filepath.exists() else 0
-        logger.info(f"Saved chart: {filepath} ({file_size} bytes)")
+            # Sleep 3.0s to allow candlesticks and volume indicators to finish rendering
+            await asyncio.sleep(3.0)
 
+            # Query chart container or take full page screenshot
+            chart_element = await page.query_selector("div.chart-container, div.tv-embed-widget-wrapper, body")
+            if chart_element:
+                await chart_element.screenshot(path=str(filepath))
+            else:
+                await page.screenshot(path=str(filepath))
+
+            file_size = os.path.getsize(filepath) if filepath.exists() else 0
+            if file_size < 5000:
+                raise ValueError(f"Captured chart is abnormally small or empty ({file_size} bytes)")
+
+            logger.info(f"Saved chart: {filepath} ({file_size} bytes)")
+            return {
+                "symbol": symbol,
+                "tradingview_symbol": clean_symbol,
+                "interval": interval,
+                "timeframe": tf_label,
+                "filepath": str(filepath.resolve()),
+                "filename": filename,
+                "size_bytes": file_size,
+                "status": "success",
+            }
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Error capturing {symbol} ({interval}) on attempt {attempt + 1}: {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(2)
+        finally:
+            if page:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+
+    # Graceful fallback: If all retries failed but an earlier valid chart exists on disk, reuse it
+    if filepath.exists() and filepath.stat().st_size > 5000:
+        logger.warning(
+            f"Capture failed after {max_retries + 1} attempts ({last_error}). Falling back to existing valid chart: {filepath}"
+        )
         return {
             "symbol": symbol,
             "tradingview_symbol": clean_symbol,
@@ -83,20 +129,22 @@ async def capture_single_chart(
             "timeframe": tf_label,
             "filepath": str(filepath.resolve()),
             "filename": filename,
-            "size_bytes": file_size,
-            "status": "success",
+            "size_bytes": filepath.stat().st_size,
+            "status": "fallback_cached",
+            "warning": f"Capture failed ({last_error}), retained existing valid chart.",
         }
-    except Exception as e:
-        logger.error(f"Error capturing {symbol} ({interval}): {e}")
-        return {
-            "symbol": symbol,
-            "interval": interval,
-            "timeframe": tf_label,
-            "error": str(e),
-            "status": "error",
-        }
-    finally:
-        await page.close()
+
+    logger.error(f"Permanent failure capturing {symbol} ({interval}): {last_error}")
+    return {
+        "symbol": symbol,
+        "tradingview_symbol": clean_symbol,
+        "interval": interval,
+        "timeframe": tf_label,
+        "filepath": str(filepath.resolve()) if filepath.exists() else None,
+        "filename": filename,
+        "error": str(last_error),
+        "status": "error",
+    }
 
 
 async def capture_tradingview_charts(
@@ -121,11 +169,13 @@ async def capture_tradingview_charts(
             tf_label = TIMEFRAME_LABELS.get(str(interval), str(interval))
             filename = f"{sanitize_filename(sym)}_{tf_label}.png"
             filepath = out_path / filename
-            if not force_recapture and filepath.exists() and filepath.stat().st_size > 1000:
+            if not force_recapture and filepath.exists() and filepath.stat().st_size > 5000:
                 logger.info(f"Using cached chart: {filename} ({filepath.stat().st_size} bytes)")
                 results.append({
                     "symbol": sym,
+                    "tradingview_symbol": SYMBOL_MAP.get(sym.upper(), sym),
                     "interval": interval,
+                    "timeframe": tf_label,
                     "filename": filename,
                     "filepath": str(filepath.resolve()),
                     "size_bytes": filepath.stat().st_size,
@@ -153,11 +203,12 @@ async def capture_tradingview_charts(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         )
 
-        for sym, interval in missing_targets:
-            res = await capture_single_chart(context, sym, interval, out_path)
-            results.append(res)
-
-        await browser.close()
+        try:
+            for sym, interval in missing_targets:
+                res = await capture_single_chart(context, sym, interval, out_path)
+                results.append(res)
+        finally:
+            await browser.close()
 
     return results
 

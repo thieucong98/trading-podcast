@@ -145,6 +145,8 @@ class NotebookLMClient:
 
         # 2. Add Completed Report Markdown Sources
         for md_path_str in report_md_paths:
+            if not md_path_str or not isinstance(md_path_str, (str, Path)):
+                continue
             md_file = Path(md_path_str)
             if md_file.exists() and md_file.stat().st_size > 50:
                 logger.info(f"Uploading completed report markdown to notebook {target_nid}: {md_file.name} ({md_file.stat().st_size} bytes)")
@@ -165,6 +167,8 @@ class NotebookLMClient:
 
         # 3. Add Chart Images Sources
         for img in chart_image_paths:
+            if not img or not isinstance(img, (str, Path)):
+                continue
             img_path = Path(img)
             if img_path.exists() and img_path.stat().st_size > 500:
                 logger.info(f"Uploading chart to notebook {target_nid}: {img_path.name}")

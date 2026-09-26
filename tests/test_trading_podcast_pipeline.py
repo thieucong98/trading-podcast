@@ -128,7 +128,7 @@ class TestTradingPodcastPipeline(unittest.TestCase):
     def test_07_n8n_e2e_webhook_pipeline(self):
         """Trigger the published n8n workflow via webhook and verify full end-to-end execution."""
         start = datetime.datetime.now()
-        res = requests.get(N8N_WEBHOOK_URL, timeout=120)
+        res = requests.get(N8N_WEBHOOK_URL, timeout=240)
         elapsed = (datetime.datetime.now() - start).total_seconds()
 
         self.assertEqual(res.status_code, 200, f"Webhook execution failed with {res.status_code}: {res.text}")

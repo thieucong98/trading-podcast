@@ -214,13 +214,15 @@ workflow = {
                 "options": {
                     "timeout": 1800000
                 }
-
             },
             "id": "http-analyze-markets",
             "name": "Analyze & Download Completed Reports (TradingAgents AI)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [800, 280]
+            "position": [800, 280],
+            "retryOnFail": True,
+            "maxTries": 3,
+            "waitBetweenTries": 10000
         },
         {
             "parameters": {
@@ -230,14 +232,17 @@ workflow = {
                 "specifyBody": "json",
                 "jsonBody": "={\n  \"symbols\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_symbols) }},\n  \"intervals\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_intervals) }},\n  \"force_recapture\": {{ $('Global Pipeline Settings').first().json.force_recapture_charts }}\n}",
                 "options": {
-                    "timeout": 300000
+                    "timeout": 600000
                 }
             },
             "id": "http-capture-charts",
             "name": "Capture Multi-Timeframe Charts (TradingView)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [800, 560]
+            "position": [800, 560],
+            "retryOnFail": True,
+            "maxTries": 3,
+            "waitBetweenTries": 5000
         },
         {
             "parameters": {
@@ -257,7 +262,7 @@ workflow = {
                 "url": "http://trading-podcast-bridge:8010/api/notebooklm/upload-sources",
                 "sendBody": True,
                 "specifyBody": "json",
-                "jsonBody": "={\n  \"report_md_paths\": {{ JSON.stringify($('Analyze & Download Completed Reports (TradingAgents AI)').first().json.report_files) }},\n  \"chart_image_paths\": {{ JSON.stringify($('Capture Multi-Timeframe Charts (TradingView)').first().json.charts.map(c => c.filepath)) }}\n}",
+                "jsonBody": "={\n  \"report_md_paths\": {{ JSON.stringify($('Analyze & Download Completed Reports (TradingAgents AI)').first().json.report_files) }},\n  \"chart_image_paths\": {{ JSON.stringify($('Capture Multi-Timeframe Charts (TradingView)').first().json.charts.filter(c => c && c.filepath).map(c => c.filepath)) }}\n}",
                 "options": {
                     "timeout": 600000
                 }
@@ -266,7 +271,10 @@ workflow = {
             "name": "Upload Completed Reports & Charts to NotebookLM",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [1500, 420]
+            "position": [1500, 420],
+            "retryOnFail": True,
+            "maxTries": 3,
+            "waitBetweenTries": 5000
         },
         {
             "parameters": {
@@ -283,7 +291,10 @@ workflow = {
             "name": "Generate Vietnamese Studio Audio (NotebookLM)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [1850, 420]
+            "position": [1850, 420],
+            "retryOnFail": True,
+            "maxTries": 2,
+            "waitBetweenTries": 5000
         },
         {
             "parameters": {
