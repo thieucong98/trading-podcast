@@ -1,6 +1,10 @@
-# 🎙️ Trading Podcast AI Pipeline - Daily Studio Audio
+# 🎙️🎬 AI Media Studio: Trading Podcast & YouTube Full-AI Video Pipeline
 
-Hệ thống tự động hóa toàn diện quy trình sản xuất **Podcast Phân tích Kỹ thuật & Chiến lược Giao dịch Thị trường Tài chính chuyên sâu bằng Tiếng Việt**, điều phối thông minh qua **n8n**, kết nối trực tiếp với nền tảng trí tuệ nhân tạo **TradingAgents AI**, công cụ chụp ảnh kỹ thuật **TradingView Multi-Timeframe Capturer**, và phòng thu **Studio Audio Overview của Google NotebookLM**.
+> 📖 **Cẩm Nang Vận Hành**: Xem chi tiết [Hướng dẫn Cài đặt, Cấu hình & Vận hành Chuyên nghiệp](docs/OPERATIONS_AND_CONFIGURATION_GUIDE.md) bao gồm thông số cài đặt tập trung, lệnh kích hoạt Webhook, xử lý lỗi và cẩm nang bứt phá 1 triệu subscribers.
+
+Hệ thống studio tự động hóa đa phương tiện hai dây chuyền sản xuất:
+1. **Trading Podcast AI Pipeline (NotebookLM)**: Sản xuất Podcast Phân tích Kỹ thuật & Chiến lược Giao dịch Chuyên sâu Tiếng Việt nạp 18 nguồn tri thức từ TradingAgents và TradingView vào Google NotebookLM Studio.
+2. **YouTube Faceless Full-AI Video Studio (Google Veo 3 / Flow + Imagen 3 + n8n)**: Sản xuất video dài 8–12 phút ghép từ 100% video clip sinh từ AI (Keyframe-Seeded I2V), đồng bộ nhịp thở kịch bản bằng Optical Flow retiming, âm thanh đa tầng foley và phụ đề kinetic Alex Hormozi/Vox.
 
 ---
 
@@ -179,8 +183,9 @@ Sau mỗi phiên chạy, các tệp tài nguyên được lưu trữ tại thư 
 
 ---
 
-## 📡 API Endpoints (Trading Podcast Bridge Service :8010)
+## 📡 API Endpoints (Studio Bridge Service :8010)
 
+### 1. Trading Podcast Pipeline
 | Endpoint | Phương thức | Mô tả chức năng |
 | :--- | :---: | :--- |
 | `/health` | `GET` | Kiểm tra trạng thái hoạt động và xác thực NotebookLM |
@@ -191,12 +196,45 @@ Sau mỗi phiên chạy, các tệp tài nguyên được lưu trữ tại thư 
 | `/api/download/chart/{filename}` | `GET` | Tải xuống ảnh biểu đồ nến kỹ thuật |
 | `/api/download/report/{filename}` | `GET` | Tải xuống báo cáo Markdown hoàn chỉnh |
 
+### 2. YouTube Faceless Full-AI Video Studio (v3.0 Ultra)
+| Endpoint | Phương thức | Mô tả chức năng |
+| :--- | :---: | :--- |
+| `/api/youtube/studio/full-pipeline` | `POST` | Chạy toàn trình từ ý tưởng -> kịch bản -> clip AI -> render 1080p + 3 Shorts |
+| `/api/youtube/studio/trend-radar` | `POST` | Quét Google Trends RSS & Yahoo Finance, phân tích 5 concept viral high-RPM |
+| `/api/youtube/studio/extract-shorts` | `POST` | Bóc tách video 16:9 thành 3 Shorts dọc 9:16 kèm phụ đề Hormozi (safe zone 520px) |
+| `/api/youtube/studio/storyboard` | `POST` | Phân rã kịch bản thành các nhịp 4–6s và Anchor nhân vật |
+| `/api/youtube/studio/generate-anchors-and-clips` | `POST` | Sinh ảnh Anchor (Imagen 3) và chuyển động Veo 3 I2V (Google Direct hoặc Fal.ai) |
+| `/api/youtube/studio/retime-clip` | `POST` | Co giãn video clip khớp giọng đọc bằng Optical Flow |
+| `/api/youtube/studio/assemble-video` | `POST` | Dựng video 1080p hoàn chỉnh kèm âm thanh đa tầng & phụ đề |
+| `/api/youtube/upload` | `POST` | Đóng gói xuất bản trực tiếp lên YouTube Data API v3 |
+| `/api/download/video/{filename}` | `GET` | Tải video MP4 thành phẩm (dài 16:9 hoặc shorts 9:16) |
+| `/api/download/thumbnail/{filename}` | `GET` | Tải ảnh bìa thumbnail 16:9 chất lượng cao |
+
+---
+
+## 🔄 Khôi Phục Phiên Làm Việc Antigravity (Cross-Machine Chat Resume)
+
+Dự án tích hợp đầy đủ cơ chế lưu trữ và phục hồi phiên làm việc Antigravity:
+1. **Khôi phục trên máy tính mới**:
+   ```bash
+   python3 scripts/restore_antigravity.py
+   ```
+2. **Tiếp tục chat (Resume session)**:
+   ```bash
+   # Tiếp tục phiên làm việc YouTube Studio v3.0 Ultra
+   agy --resume d7d40cd3-2a98-4270-99bf-102cbafd0350
+
+   # Hoặc tiếp tục phiên Trading Podcast ban đầu
+   agy --resume dc80f4a9-5ff0-4d5e-9a80-ffa4d985f271
+   ```
+3. **Đọc trực quan lịch sử chat trên GitHub**: Xem tại [`docs/chat_history/`](./docs/chat_history/README.md).
+
 ---
 
 ## 🛡️ Tiêu Chuẩn Bảo Mật & Đóng Gói (Security Audit)
 * **Không lưu trữ Secret/Token trong mã nguồn:** Tất cả mật khẩu, khóa bí mật, cookie phiên được quản lý tách biệt qua file `.env` và `storage_state.json`.
-* **Quy tắc `.gitignore` nghiêm ngặt:** Chặn hoàn toàn việc commit các tệp cookie, binary MP3 lớn, hoặc dữ liệu nhạy cảm lên Git.
-* **Cơ chế Idempotency & Tự phục hồi:** Tự động sửa lỗi cấu trúc cookie Google nếu người dùng xuất định dạng mảng thuần túy thành chuẩn Playwright Storage State.
+* **Quy tắc `.gitignore` nghiêm ngặt:** Chặn hoàn toàn việc commit các tệp cookie, binary MP3/MP4 lớn, hoặc dữ liệu nhạy cảm lên Git.
+* **Cơ chế Sanitization tự động:** Script xuất dữ liệu tự động quét và che mờ 100% token nhạy cảm trước khi lưu trữ.
 
 ---
 

@@ -1,0 +1,18 @@
+[
+  {
+    "conversation_id": "d7d40cd3-2a98-4270-99bf-102cbafd0350",
+    "title": "Xây Kênh YouTube Podcast Tự Động",
+    "preview": "Xây Kênh YouTube Podcast Tự Động",
+    "step_count": 1056,
+    "last_modified_time": "2026-09-27 15:48:41.625306859+00:00",
+    "workspace_uris": "[\"file:///home/popeye/projects/trading-podcast\"]"
+  },
+  {
+    "conversation_id": "dc80f4a9-5ff0-4d5e-9a80-ffa4d985f271",
+    "title": "Trading Podcast n8n Workflow",
+    "preview": "/goal /ak:brainstorm hiện tại tôi đang muốn xây dựng một ưng dụng hoặc build một workflow xây dựng podcast về trading, tôi đã có ứng dụng trading agent ở thư mục ../TradingAgents hãy giúp tôi fetch lại code mới nhất run trên docker, sau đó hãy giúp tôi phân tích tìm giải pháp sử dụng output của ứng dung, output là file md, sau dó build một workflow sử dụng n8n có thể run trên docker sau đó build một workflow từ ",
+    "step_count": 3049,
+    "last_modified_time": "2026-09-27T15:47:22.095666+00:00",
+    "workspace_uris": "file:///home/popeye/projects/trading-podcast"
+  }
+]

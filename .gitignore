@@ -33,6 +33,12 @@ bridge/output/
 *.mp3
 *.m4a
 *.wav
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+*.flv
 *.png
 *.jpg
 *.jpeg
