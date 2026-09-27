@@ -46,9 +46,14 @@ Welcome to **trading-podcast** — an autonomous AI media production and quantit
 
 If you clone this repository onto a new machine:
 1. Run the one-command restore script:
-   ```bash
-   python3 scripts/restore_antigravity.py
-   ```
+   - **Windows (PowerShell Native)**:
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File .\scripts\restore_antigravity.ps1
+     ```
+   - **Linux / macOS / WSL**:
+     ```bash
+     python3 scripts/restore_antigravity.py
+     ```
 2. Resume the primary Studio development session:
    ```bash
    agy --resume d7d40cd3-2a98-4270-99bf-102cbafd0350

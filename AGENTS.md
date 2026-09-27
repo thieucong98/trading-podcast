@@ -25,8 +25,7 @@ This file defines the operational guidelines for all AI agents working on the **
 
 ## 3. SESSION RESTORATION & CONTEXT
 - To resume the exact conversational context of this project on a new workstation:
-  ```bash
-  python3 scripts/restore_antigravity.py
-  agy --resume d7d40cd3-2a98-4270-99bf-102cbafd0350
-  ```
+  - **Windows**: `powershell -ExecutionPolicy Bypass -File .\scripts\restore_antigravity.ps1`
+  - **Linux / WSL**: `python3 scripts/restore_antigravity.py`
+  - **Resume session**: `agy --resume d7d40cd3-2a98-4270-99bf-102cbafd0350`
 - Detailed turn-by-turn logs: See `docs/chat_history/`.

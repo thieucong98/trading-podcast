@@ -12,9 +12,14 @@ Tài liệu này lưu trữ toàn bộ lịch sử trao đổi, nghiên cứu gi
 ## 2. Cách Khôi Phục & Tiếp Tục Chat (Resume) Trên Máy Khác
 
 1. Chạy script khôi phục tự động:
-   ```bash
-   python3 scripts/restore_antigravity.py
-   ```
+   - **Trên Windows**:
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File .\scripts\restore_antigravity.ps1
+     ```
+   - **Trên Linux / macOS / WSL**:
+     ```bash
+     python3 scripts/restore_antigravity.py
+     ```
 2. Resume phiên làm việc mong muốn:
    ```bash
    # Tiếp tục phiên YouTube Studio v3.0 Ultra
