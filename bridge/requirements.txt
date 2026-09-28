@@ -6,3 +6,4 @@ requests>=2.32.0
 python-dotenv>=1.0.0
 aiofiles>=24.1.0
 notebooklm-py[cookies]>=0.8.2
+gTTS>=2.5.0

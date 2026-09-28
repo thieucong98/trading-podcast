@@ -120,18 +120,78 @@ workflow = {
         },
         {
             "parameters": {
+                "httpMethod": "GET",
+                "path": "run-trading-podcast-fast",
+                "responseMode": "lastNode",
+                "options": {}
+            },
+            "id": "webhook-trigger-fast-get",
+            "name": "Webhook Trigger Fast (GET)",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [200, 840],
+            "webhookId": "run-trading-podcast-fast-get"
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "run-trading-podcast-fast",
+                "responseMode": "lastNode",
+                "options": {}
+            },
+            "id": "webhook-trigger-fast-post",
+            "name": "Webhook Trigger Fast (POST)",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [200, 980],
+            "webhookId": "run-trading-podcast-fast-post"
+        },
+        {
+            "parameters": {
+                "path": "run-podcast-form",
+                "formTitle": "Trading Podcast AI - Fast Launcher",
+                "formDescription": "Launch Daily Trading Podcast instantly (Defaults to skipping analysis & chart capture to reuse today's data).",
+                "formFields": {
+                    "values": [
+                        {
+                            "fieldLabel": "Skip Analysis & Chart Capture (Reuse Today's Existing Reports & Charts)",
+                            "fieldType": "dropdown",
+                            "fieldOptions": {
+                                "values": [
+                                    {
+                                        "option": "Yes (Skip & Instant Podcast)"
+                                    },
+                                    {
+                                        "option": "No (Force Re-analyze & Capture)"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "form-trigger-tp",
+            "name": "n8n Form Trigger (Podcast Fast Launcher)",
+            "type": "n8n-nodes-base.formTrigger",
+            "typeVersion": 2.2,
+            "position": [200, 1120],
+            "webhookId": "run-podcast-form"
+        },
+        {
+            "parameters": {
                 "assignments": {
                     "assignments": [
                         {
                             "id": "setting-force-reanalyze",
                             "name": "force_reanalyze",
-                            "value": "={{ [ $json?.force_reanalyze, $json?.force_analysis, $json?.forceReanalyze, $json?.reanalyze, $json?.body?.force_reanalyze, $json?.body?.force_analysis, $json?.body?.forceReanalyze, $json?.body?.reanalyze, $json?.query?.force_reanalyze, $json?.query?.force_analysis, $json?.query?.forceReanalyze, $json?.query?.reanalyze ].some(v => v === true || v === 'true' || v === 1 || v === '1') }}",
+                            "value": "={{ (() => { const p = $json?.path || ''; const isFast = p.includes('fast') || ($json?.['Skip Analysis & Chart Capture (Reuse Today\\'s Existing Reports & Charts)'] || '').includes('Yes') || $json?.skip_analysis === true || $json?.skip_analysis === 'true' || $json?.body?.skip_analysis === true || $json?.body?.skip_analysis === 'true' || $json?.query?.skip_analysis === true || $json?.query?.skip_analysis === 'true'; if (isFast) return false; const explicitFalse = [ $json?.force_analysis, $json?.force_reanalyze, $json?.body?.force_analysis, $json?.body?.force_reanalyze, $json?.query?.force_analysis, $json?.query?.force_reanalyze ].some(v => v === false || v === 'false' || v === 0 || v === '0'); if (explicitFalse) return false; return [ $json?.force_reanalyze, $json?.force_analysis, $json?.forceReanalyze, $json?.reanalyze, $json?.body?.force_reanalyze, $json?.body?.force_analysis, $json?.body?.forceReanalyze, $json?.body?.reanalyze, $json?.query?.force_reanalyze, $json?.query?.force_analysis, $json?.query?.forceReanalyze, $json?.query?.reanalyze ].some(v => v === true || v === 'true' || v === 1 || v === '1'); })() }}",
                             "type": "boolean"
                         },
                         {
                             "id": "setting-force-recapture",
                             "name": "force_recapture_charts",
-                            "value": "={{ [ $json?.force_recapture_charts, $json?.force_recapture, $json?.force_capture, $json?.forceRecapture, $json?.forceCapture, $json?.recapture, $json?.body?.force_recapture_charts, $json?.body?.force_recapture, $json?.body?.force_capture, $json?.body?.forceRecapture, $json?.body?.forceCapture, $json?.body?.recapture, $json?.query?.force_recapture_charts, $json?.query?.force_recapture, $json?.query?.force_capture, $json?.query?.forceRecapture, $json?.query?.forceCapture, $json?.query?.recapture ].some(v => v === true || v === 'true' || v === 1 || v === '1') }}",
+                            "value": "={{ (() => { const p = $json?.path || ''; const isFast = p.includes('fast') || ($json?.['Skip Analysis & Chart Capture (Reuse Today\\'s Existing Reports & Charts)'] || '').includes('Yes') || $json?.skip_capture === true || $json?.skip_capture === 'true' || $json?.body?.skip_capture === true || $json?.body?.skip_capture === 'true' || $json?.query?.skip_capture === true || $json?.query?.skip_capture === 'true'; if (isFast) return false; const explicitFalse = [ $json?.force_capture, $json?.force_recapture, $json?.body?.force_capture, $json?.body?.force_recapture, $json?.query?.force_capture, $json?.query?.force_recapture ].some(v => v === false || v === 'false' || v === 0 || v === '0'); if (explicitFalse) return false; return [ $json?.force_recapture_charts, $json?.force_recapture, $json?.force_capture, $json?.forceRecapture, $json?.forceCapture, $json?.recapture, $json?.body?.force_recapture_charts, $json?.body?.force_recapture, $json?.body?.force_capture, $json?.body?.forceRecapture, $json?.body?.forceCapture, $json?.body?.recapture, $json?.query?.force_recapture_charts, $json?.query?.force_recapture, $json?.query?.force_capture, $json?.query?.forceRecapture, $json?.query?.forceCapture, $json?.query?.recapture ].some(v => v === true || v === 'true' || v === 1 || v === '1'); })() }}",
                             "type": "boolean"
                         },
                         {
@@ -342,6 +402,39 @@ workflow = {
             ]
         },
         "Webhook Trigger (POST)": {
+            "main": [
+                [
+                    {
+                        "node": "Global Pipeline Settings",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Trigger Fast (GET)": {
+            "main": [
+                [
+                    {
+                        "node": "Global Pipeline Settings",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook Trigger Fast (POST)": {
+            "main": [
+                [
+                    {
+                        "node": "Global Pipeline Settings",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "n8n Form Trigger (Podcast Fast Launcher)": {
             "main": [
                 [
                     {

@@ -501,6 +501,13 @@ async def analyze_markets_endpoint(req: MarketAnalysisRequest):
         clean_t = _clean_ticker(ticker)
         md_path = REPORTS_DIR / f"TradingAgents_{clean_t}_{today}_Complete.md"
 
+        # Fast local disk cache check: if report already exists for today and force_reanalyze is False, reuse it immediately!
+        if not req.force_reanalyze and md_path.exists() and md_path.stat().st_size > 1000:
+            saved_reports[ticker] = str(md_path.resolve())
+            reused_tickers.append(ticker)
+            logger.info(f"[{ticker}] Fast cache hit: Reused existing completed report on disk ({md_path.stat().st_size} bytes)")
+            continue
+
         # Check if we can reuse a completed job (strictly matching requested provider and models)
         if not req.force_reanalyze and ticker in existing_completed:
             candidate = existing_completed[ticker]
