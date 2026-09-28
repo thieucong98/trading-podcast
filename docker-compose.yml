@@ -39,6 +39,10 @@ services:
     environment:
       - OUTPUT_DIR=/app/output
       - NOTEBOOKLM_STORAGE_STATE=/app/storage_state.json
+      - NOTEBOOKLM_HEADLESS_REAUTH=1
+      - NOTEBOOKLM_ENABLE_KEEPALIVE=true
+      - NOTEBOOKLM_KEEPALIVE_INTERVAL=900
+      - NOTEBOOKLM_REFRESH_CMD=notebooklm auth refresh --allow-headless
       - PYTHONUNBUFFERED=1
       - DEFAULT_LLM_PROVIDER=openai_compatible
       - DEFAULT_DEEP_THINK_LLM=ag/gemini-3.8-flash-high
@@ -46,10 +50,12 @@ services:
       - TRADINGAGENTS_BACKEND_URL=http://tradingagents-backend:8000
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - FAL_KEY=${FAL_KEY:-}
     volumes:
       - ./bridge:/app/bridge
       - ./output:/app/output
       - ./storage_state.json:/app/storage_state.json
+      - ./data/notebooklm_profile:/root/.notebooklm
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import datetime
 import logging
 import os
@@ -26,10 +27,80 @@ from .google_ai_service import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("bridge_service")
 
+_keepalive_task: asyncio.Task | None = None
+_keepalive_last_run: str | None = None
+_keepalive_last_status: str | None = None
+
+
+async def notebooklm_keepalive_daemon():
+    """Background worker that continuously keeps Google NotebookLM auth cookies fresh.
+    Google invalidates __Secure-1PSIDTS after ~12-24 hours without rotation.
+    By routinely invoking RotateCookies every 15 minutes, the session remains active indefinitely.
+    """
+    global _keepalive_last_run, _keepalive_last_status
+    interval = int(os.getenv("NOTEBOOKLM_KEEPALIVE_INTERVAL", "900"))
+    logger.info(f"Starting NotebookLM cookie keepalive daemon (interval={interval}s)...")
+
+    # Initial brief wait before first keepalive check so server startup completes
+    await asyncio.sleep(10)
+
+    while True:
+        try:
+            if notebooklm_client.is_authenticated():
+                logger.info("Keepalive daemon: Triggering Google cookie rotation check...")
+                now_str = datetime.datetime.now().isoformat()
+                _keepalive_last_run = now_str
+                res = await asyncio.to_thread(notebooklm_client.refresh_auth_cookies, verify=True)
+                st = res.get("status")
+                _keepalive_last_status = st
+                if st == "success":
+                    logger.info("Keepalive daemon: Google cookie rotation succeeded.")
+                else:
+                    logger.warning(
+                        f"Keepalive daemon: Google cookie rotation returned status='{st}': {res.get('message') or res.get('error')}"
+                    )
+            else:
+                _keepalive_last_status = "unauthenticated"
+        except asyncio.CancelledError:
+            logger.info("NotebookLM keepalive daemon task cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Error in NotebookLM keepalive daemon: {e}")
+            _keepalive_last_status = f"error: {e}"
+
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            break
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _keepalive_task
+    enable_keepalive = os.getenv("NOTEBOOKLM_ENABLE_KEEPALIVE", "true").lower() in ("1", "true", "yes")
+    if enable_keepalive:
+        _keepalive_task = asyncio.create_task(notebooklm_keepalive_daemon())
+        logger.info("NotebookLM keepalive background task initiated.")
+    else:
+        logger.info("NotebookLM keepalive is disabled via NOTEBOOKLM_ENABLE_KEEPALIVE.")
+    try:
+        yield
+    finally:
+        if _keepalive_task and not _keepalive_task.done():
+            logger.info("Stopping NotebookLM keepalive daemon...")
+            _keepalive_task.cancel()
+            try:
+                await _keepalive_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("NotebookLM keepalive daemon successfully stopped.")
+
+
 app = FastAPI(
     title="Trading Podcast & YouTube Faceless Automation Bridge",
     description="FastAPI service connecting TradingAgents, NotebookLM, Google Gemini, Imagen 3, Veo, and FFmpeg Video Assembly",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -84,6 +155,14 @@ class PodcastGenerateRequest(BaseModel):
     date: str | None = None
 
 
+class NotebookLMAuthRefreshRequest(BaseModel):
+    verify: bool = Field(default=True, description="Verify cookie validity with Google after rotation")
+
+
+class NotebookLMAuthImportRequest(BaseModel):
+    cookies: Any = Field(..., description="Array of cookies, Playwright storage_state object, or raw JSON string")
+
+
 class MarketAnalysisRequest(BaseModel):
     tickers: list[str] = Field(default=["XAUUSD", "SPY", "BTC-USD"])
     tradingagents_backend_url: str = Field(default="http://tradingagents-backend:8000")
@@ -120,6 +199,8 @@ async def health():
         "status": "healthy",
         "service": "Trading Podcast Bridge",
         "notebooklm_authenticated": notebooklm_client.is_authenticated(),
+        "notebooklm_keepalive_active": _keepalive_task is not None and not _keepalive_task.done(),
+        "notebooklm_keepalive_last_status": _keepalive_last_status,
         "storage_state_path": notebooklm_client.storage_state_path,
         "output_dir": str(OUTPUT_DIR.resolve()),
     }
@@ -195,6 +276,41 @@ async def generate_podcast_endpoint(req: PodcastGenerateRequest):
     except Exception as e:
         logger.error(f"Failed generating podcast: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/notebooklm/auth/status")
+async def notebooklm_auth_status_endpoint(test_token: bool = False):
+    """Check NotebookLM Google authentication status.
+    If test_token is True, attempts an active probe to Google's backend.
+    """
+    logger.info(f"Checking NotebookLM auth status (test_token={test_token})...")
+    res = await asyncio.to_thread(notebooklm_client.check_auth_live, test_token=test_token)
+    res["keepalive"] = {
+        "enabled": os.getenv("NOTEBOOKLM_ENABLE_KEEPALIVE", "true").lower() in ("1", "true", "yes"),
+        "interval_seconds": int(os.getenv("NOTEBOOKLM_KEEPALIVE_INTERVAL", "900")),
+        "last_run": _keepalive_last_run,
+        "last_status": _keepalive_last_status,
+        "task_active": _keepalive_task is not None and not _keepalive_task.done(),
+    }
+    return res
+
+
+@app.post("/api/notebooklm/auth/refresh")
+async def notebooklm_auth_refresh_endpoint(req: NotebookLMAuthRefreshRequest = NotebookLMAuthRefreshRequest()):
+    """Manually trigger Google RotateCookies keepalive flow and sync refreshed tokens to disk."""
+    logger.info(f"Triggering NotebookLM cookie refresh (verify={req.verify})...")
+    res = await asyncio.to_thread(notebooklm_client.refresh_auth_cookies, verify=req.verify)
+    return res
+
+
+@app.post("/api/notebooklm/auth/import-cookies")
+async def notebooklm_auth_import_cookies_endpoint(req: NotebookLMAuthImportRequest):
+    """Import new Google session cookies directly without manual file editing.
+    Accepts Playwright storage_state JSON, cookie list, or raw cookie JSON string.
+    """
+    logger.info("Importing new Google session cookies...")
+    res = await asyncio.to_thread(notebooklm_client.import_cookies, req.cookies)
+    return res
 
 
 def _clean_ticker(ticker: str) -> str:

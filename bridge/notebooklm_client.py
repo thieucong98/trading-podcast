@@ -47,8 +47,22 @@ class NotebookLMClient:
             logger.warning(f"Failed ensuring default profile auth: {e}")
             return False
 
+    def _sync_profile_to_storage_state(self) -> bool:
+        """Copy the profile's refreshed storage_state.json back to the mounted storage_state_path."""
+        profile_path = Path.home() / ".notebooklm" / "profiles" / "default" / "storage_state.json"
+        if not profile_path.exists():
+            return False
+        try:
+            target = Path(self.storage_state_path)
+            content = profile_path.read_text(encoding="utf-8")
+            target.write_text(content, encoding="utf-8")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed syncing rotated cookies back to {self.storage_state_path}: {e}")
+            return False
+
     def is_authenticated(self) -> bool:
-        """Check if Google session credentials exist."""
+        """Quick check if Google session credentials exist in file or profile."""
         if self._ensure_default_profile_auth():
             return True
         p = Path(self.storage_state_path)
@@ -58,6 +72,142 @@ class NotebookLMClient:
         if home_p.exists() and home_p.stat().st_size > 50:
             return True
         return False
+
+    def check_auth_live(self, test_token: bool = False) -> dict[str, Any]:
+        """Perform a live verification check on NotebookLM authentication status.
+        Uses `notebooklm auth check [--test] --json`.
+        """
+        self._ensure_default_profile_auth()
+        if not shutil.which("notebooklm"):
+            return {
+                "status": "missing_cli",
+                "authenticated": False,
+                "token_valid": False,
+                "message": "notebooklm CLI is not installed or not in PATH.",
+            }
+
+        cmd = ["notebooklm", "auth", "check", "--json"]
+        if test_token:
+            cmd.insert(3, "--test")
+
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=25)
+            data = json.loads(res.stdout) if res.stdout else {}
+            checks = data.get("checks", {})
+            details = data.get("details", {})
+            err = details.get("error")
+
+            is_valid = (data.get("status") == "ok") and (checks.get("token_fetch") is not False)
+            if test_token and checks.get("token_fetch") is False:
+                is_valid = False
+
+            return {
+                "status": "valid" if is_valid else "expired",
+                "authenticated": checks.get("cookies_present", False),
+                "token_valid": checks.get("token_fetch"),
+                "storage_exists": checks.get("storage_exists", False),
+                "cookies_count": len(details.get("cookies_found", [])),
+                "has_psidts": details.get("psidts", {}).get("present", False),
+                "account_email": data.get("account", {}).get("email"),
+                "storage_path": self.storage_state_path,
+                "error": err,
+                "raw_check": data,
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "timeout",
+                "authenticated": self.is_authenticated(),
+                "token_valid": None,
+                "message": "Timeout checking Google auth status.",
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "authenticated": self.is_authenticated(),
+                "token_valid": None,
+                "message": str(e),
+            }
+
+    def refresh_auth_cookies(self, verify: bool = True) -> dict[str, Any]:
+        """Attempt to rotate and refresh Google authentication cookies via RotateCookies keepalive.
+        Executes `notebooklm auth refresh [--verify] --allow-headless --json`.
+        """
+        self._ensure_default_profile_auth()
+        if not shutil.which("notebooklm"):
+            return {"status": "error", "message": "notebooklm CLI not found"}
+
+        cmd = ["notebooklm", "auth", "refresh", "--allow-headless"]
+        if verify:
+            cmd.append("--verify")
+
+        logger.info(f"Executing Google cookie keepalive: {' '.join(cmd)}")
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
+            if res.returncode == 0:
+                self._sync_profile_to_storage_state()
+                logger.info("Successfully refreshed and rotated NotebookLM cookies.")
+                return {
+                    "status": "success",
+                    "refreshed": True,
+                    "message": "Google cookies rotated and verified successfully.",
+                }
+            else:
+                err = (res.stderr or res.stdout or "").strip()
+                logger.warning(f"Cookie rotation failed (exit {res.returncode}): {err}")
+                return {
+                    "status": "expired",
+                    "refreshed": False,
+                    "error": err,
+                    "message": "Cookies could not be refreshed. Google session may be fully expired.",
+                }
+        except Exception as e:
+            logger.error(f"Error during cookie rotation: {e}")
+            return {"status": "error", "refreshed": False, "message": str(e)}
+
+    def import_cookies(self, raw_input: Any) -> dict[str, Any]:
+        """Import cookies from a JSON object, list, or JSON string directly into storage_state.json."""
+        try:
+            if isinstance(raw_input, str):
+                data = json.loads(raw_input)
+            elif isinstance(raw_input, (dict, list)):
+                data = raw_input
+            else:
+                raise ValueError(f"Unsupported cookie input format: {type(raw_input)}")
+
+            # Normalize to Playwright storage_state format
+            if isinstance(data, list):
+                storage_obj = {"cookies": data, "origins": []}
+            elif isinstance(data, dict):
+                if "cookies" in data:
+                    storage_obj = data
+                else:
+                    storage_obj = {"cookies": [data], "origins": []}
+            else:
+                raise ValueError("Invalid cookie data format")
+
+            cookies = storage_obj.get("cookies", [])
+            if not cookies:
+                return {"status": "error", "message": "No cookies found in input payload."}
+
+            # Write to storage_state_path
+            p = Path(self.storage_state_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(storage_obj, indent=2), encoding="utf-8")
+
+            # Write to default profile
+            self._ensure_default_profile_auth()
+
+            # Verify and test token
+            verification = self.check_auth_live(test_token=True)
+            return {
+                "status": "success",
+                "imported_cookies_count": len(cookies),
+                "verification": verification,
+                "message": f"Successfully imported {len(cookies)} cookies into storage state.",
+            }
+        except Exception as e:
+            logger.error(f"Failed importing cookies: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def upload_sources_to_notebooklm(
         self,

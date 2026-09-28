@@ -144,6 +144,32 @@ class TestTradingPodcastPipeline(unittest.TestCase):
         print(f"  - Completed Reports: {len(data.get('completed_reports_downloaded', []))}")
         print(f"  - Charts Captured: {len(data.get('charts_captured', []))}")
 
+    def test_08_notebooklm_auth_management(self):
+        """Verify NotebookLM authentication status and keepalive management endpoints."""
+        res = requests.get(f"{BRIDGE_URL}/api/notebooklm/auth/status", timeout=10)
+        self.assertEqual(res.status_code, 200, f"Expected 200, got {res.status_code}: {res.text}")
+        data = res.json()
+        self.assertIn("status", data)
+        self.assertIn("authenticated", data)
+        self.assertIn("storage_exists", data)
+        self.assertIn("keepalive", data)
+
+        keepalive = data["keepalive"]
+        self.assertIn("enabled", keepalive)
+        self.assertIn("interval_seconds", keepalive)
+
+        # Also test refresh endpoint response contract
+        ref_res = requests.post(f"{BRIDGE_URL}/api/notebooklm/auth/refresh", json={"verify": False}, timeout=15)
+        self.assertEqual(ref_res.status_code, 200, f"Expected 200, got {ref_res.status_code}: {ref_res.text}")
+        ref_data = ref_res.json()
+        self.assertIn("status", ref_data)
+        print(f"\n[PASS] 08. NotebookLM Auth Management:")
+        print(f"  - Auth Status   : {data.get('status')}")
+        print(f"  - Storage Exists: {data.get('storage_exists')}")
+        print(f"  - Cookies Count : {data.get('cookies_count')}")
+        print(f"  - Keepalive Task: active={keepalive.get('task_active')}, interval={keepalive.get('interval_seconds')}s")
+        print(f"  - Refresh Output: status={ref_data.get('status')}")
+
 
 if __name__ == "__main__":
     unittest.main()

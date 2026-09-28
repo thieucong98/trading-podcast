@@ -13,6 +13,8 @@ bridge/storage_state.json
 *.pem
 *.key
 *.cert
+data/
+data/*
 
 # ==============================================================================
 # Runtime Outputs & Media Artifacts (Heavy Files, Reports & Audio)
