@@ -5,6 +5,10 @@ storage_state.json
 storage_state.json:*
 *storage_state*.json*
 bridge/storage_state.json
+master_token.json
+master_token.json:*
+*master_token*.json*
+bridge/master_token.json
 *.env
 .env
 .env.*

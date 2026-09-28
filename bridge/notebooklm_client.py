@@ -61,8 +61,138 @@ class NotebookLMClient:
             logger.warning(f"Failed syncing rotated cookies back to {self.storage_state_path}: {e}")
             return False
 
+    def _master_token_paths(self) -> tuple[Path, Path]:
+        app_path = Path(self.storage_state_path).parent / "master_token.json"
+        profile_path = Path.home() / ".notebooklm" / "profiles" / "default" / "master_token.json"
+        return app_path, profile_path
+
+    def _sync_master_tokens(self) -> bool:
+        """Synchronize master_token.json between the mounted storage dir and profile dir."""
+        app_path, profile_path = self._master_token_paths()
+        try:
+            if app_path.exists() and app_path.stat().st_size > 10:
+                if not profile_path.exists() or profile_path.stat().st_size != app_path.stat().st_size:
+                    profile_path.parent.mkdir(parents=True, exist_ok=True)
+                    profile_path.write_bytes(app_path.read_bytes())
+                    try:
+                        os.chmod(profile_path, 0o600)
+                    except Exception:
+                        pass
+                    return True
+            elif profile_path.exists() and profile_path.stat().st_size > 10:
+                if not app_path.exists() or app_path.stat().st_size != profile_path.stat().st_size:
+                    app_path.parent.mkdir(parents=True, exist_ok=True)
+                    app_path.write_bytes(profile_path.read_bytes())
+                    try:
+                        os.chmod(app_path, 0o600)
+                    except Exception:
+                        pass
+                    return True
+        except Exception as e:
+            logger.warning(f"Failed syncing master token: {e}")
+        return False
+
+    def has_master_token(self) -> bool:
+        """Check if durable Google Master Token exists in either storage location."""
+        self._sync_master_tokens()
+        app_path, profile_path = self._master_token_paths()
+        return (app_path.exists() and app_path.stat().st_size > 10) or (
+            profile_path.exists() and profile_path.stat().st_size > 10
+        )
+
+    def get_master_token_info(self) -> dict[str, Any]:
+        """Get non-sensitive metadata about the stored Google Master Token."""
+        self._sync_master_tokens()
+        app_path, profile_path = self._master_token_paths()
+        target = app_path if app_path.exists() and app_path.stat().st_size > 10 else profile_path
+        if not target.exists() or target.stat().st_size <= 10:
+            return {"exists": False}
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {
+                "exists": True,
+                "email": data.get("email"),
+                "android_id": data.get("android_id"),
+                "has_secret": bool(data.get("secret")),
+                "path": str(target),
+            }
+        except Exception as e:
+            return {"exists": True, "error": str(e)}
+
+    def remint_from_master_token(self) -> dict[str, Any]:
+        """Mint a fresh storage_state.json from stored master token without any browser."""
+        if not self.has_master_token():
+            return {"status": "no_master_token", "message": "No master token found"}
+
+        self._sync_master_tokens()
+        cmd = ["notebooklm", "login", "--master-token", "--master-token-refresh"]
+        logger.info(f"Minting fresh cookies from master token: {' '.join(cmd)}")
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=40)
+            if res.returncode == 0:
+                self._sync_profile_to_storage_state()
+                self._sync_master_tokens()
+                logger.info("Successfully re-minted fresh Google cookies from master token.")
+                return {
+                    "status": "success",
+                    "refreshed": True,
+                    "method": "master_token_remint",
+                    "message": "Cookies re-minted headlessly from master token.",
+                }
+            else:
+                err = (res.stderr or res.stdout or "").strip()
+                logger.warning(f"Master token re-mint failed (exit {res.returncode}): {err}")
+                return {"status": "error", "message": err}
+        except Exception as e:
+            logger.error(f"Error during master token re-mint: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def bootstrap_master_token(
+        self,
+        email: str,
+        oauth_token: str | None = None,
+        android_id: str | None = None,
+        cdp_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Bootstrap durable master token headless auth for Google account."""
+        if not email or "@" not in email:
+            return {"status": "error", "message": "A valid Google account email is required."}
+
+        cmd = ["notebooklm", "login", "--master-token", "--account", email.strip()]
+        if oauth_token:
+            cmd.extend(["--oauth-token", oauth_token.strip()])
+        if android_id:
+            cmd.extend(["--android-id", android_id.strip()])
+        if cdp_url:
+            cmd.extend(["--cdp-url", cdp_url.strip()])
+
+        logger.info(f"Executing master token bootstrap for {email}: {' '.join(cmd[:5])} ...")
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=60)
+            out = (res.stdout or "") + (res.stderr or "")
+            if res.returncode == 0:
+                self._sync_profile_to_storage_state()
+                self._sync_master_tokens()
+                return {
+                    "status": "success",
+                    "email": email,
+                    "message": "Master token successfully bootstrapped and session minted.",
+                    "output": out.strip(),
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Bootstrap failed (exit {res.returncode}): {out.strip()}",
+                    "output": out.strip(),
+                }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def is_authenticated(self) -> bool:
         """Quick check if Google session credentials exist in file or profile."""
+        if self.has_master_token():
+            return True
         if self._ensure_default_profile_auth():
             return True
         p = Path(self.storage_state_path)
@@ -78,11 +208,16 @@ class NotebookLMClient:
         Uses `notebooklm auth check [--test] --json`.
         """
         self._ensure_default_profile_auth()
+        self._sync_master_tokens()
+        master_info = self.get_master_token_info()
+
         if not shutil.which("notebooklm"):
             return {
                 "status": "missing_cli",
                 "authenticated": False,
                 "token_valid": False,
+                "master_token_present": master_info.get("exists", False),
+                "master_token": master_info,
                 "message": "notebooklm CLI is not installed or not in PATH.",
             }
 
@@ -108,7 +243,9 @@ class NotebookLMClient:
                 "storage_exists": checks.get("storage_exists", False),
                 "cookies_count": len(details.get("cookies_found", [])),
                 "has_psidts": details.get("psidts", {}).get("present", False),
-                "account_email": data.get("account", {}).get("email"),
+                "account_email": data.get("account", {}).get("email") or master_info.get("email"),
+                "master_token_present": master_info.get("exists", False),
+                "master_token": master_info,
                 "storage_path": self.storage_state_path,
                 "error": err,
                 "raw_check": data,
@@ -118,6 +255,8 @@ class NotebookLMClient:
                 "status": "timeout",
                 "authenticated": self.is_authenticated(),
                 "token_valid": None,
+                "master_token_present": master_info.get("exists", False),
+                "master_token": master_info,
                 "message": "Timeout checking Google auth status.",
             }
         except Exception as e:
@@ -125,17 +264,22 @@ class NotebookLMClient:
                 "status": "error",
                 "authenticated": self.is_authenticated(),
                 "token_valid": None,
+                "master_token_present": master_info.get("exists", False),
+                "master_token": master_info,
                 "message": str(e),
             }
 
     def refresh_auth_cookies(self, verify: bool = True) -> dict[str, Any]:
-        """Attempt to rotate and refresh Google authentication cookies via RotateCookies keepalive.
-        Executes `notebooklm auth refresh [--verify] --allow-headless --json`.
+        """Attempt to rotate and refresh Google authentication cookies via RotateCookies keepalive,
+        falling back automatically to master-token headless reminting if session is expired.
         """
         self._ensure_default_profile_auth()
+        self._sync_master_tokens()
+
         if not shutil.which("notebooklm"):
             return {"status": "error", "message": "notebooklm CLI not found"}
 
+        # 1. Try standard cookie rotation
         cmd = ["notebooklm", "auth", "refresh", "--allow-headless"]
         if verify:
             cmd.append("--verify")
@@ -149,20 +293,25 @@ class NotebookLMClient:
                 return {
                     "status": "success",
                     "refreshed": True,
+                    "method": "cookie_rotation",
                     "message": "Google cookies rotated and verified successfully.",
                 }
-            else:
-                err = (res.stderr or res.stdout or "").strip()
-                logger.warning(f"Cookie rotation failed (exit {res.returncode}): {err}")
-                return {
-                    "status": "expired",
-                    "refreshed": False,
-                    "error": err,
-                    "message": "Cookies could not be refreshed. Google session may be fully expired.",
-                }
         except Exception as e:
-            logger.error(f"Error during cookie rotation: {e}")
-            return {"status": "error", "refreshed": False, "message": str(e)}
+            logger.warning(f"Standard cookie rotation failed: {e}")
+
+        # 2. If standard rotation failed or expired, check if Master Token is present!
+        if self.has_master_token():
+            logger.info("Standard cookie rotation failed/expired. Attempting headless re-mint from Master Token...")
+            remint_res = self.remint_from_master_token()
+            if remint_res.get("status") == "success":
+                return remint_res
+
+        return {
+            "status": "expired",
+            "refreshed": False,
+            "has_master_token": self.has_master_token(),
+            "message": "Cookies could not be refreshed. If you have not yet bootstrapped a Master Token, run bootstrap.",
+        }
 
     def import_cookies(self, raw_input: Any) -> dict[str, Any]:
         """Import cookies from a JSON object, list, or JSON string directly into storage_state.json."""

@@ -49,11 +49,17 @@ def cmd_check(args):
         email = data.get("account_email") or "(Not detected / Default)"
         keepalive = data.get("keepalive", {})
 
+        mt_present = data.get("master_token_present", False)
+        mt_info = data.get("master_token", {})
+
         print(f"\n[+] Auth Status     : {status}")
         print(f"    Account Email   : {email}")
         print(f"    Storage Exists  : {data.get('storage_exists')}")
         print(f"    Cookies Present : {auth} ({cookies_count} cookies loaded)")
         print(f"    __Secure-1PSIDTS: {has_psidts} (Rotation anchor)")
+        print(f"    Master Token    : {'ACTIVE (Headless Auto-Mint Enabled)' if mt_present else 'None (Manual cookie mode)'}")
+        if mt_info.get("email"):
+            print(f"    Master Account  : {mt_info.get('email')}")
 
         if token_valid is not None:
             token_display = "VALID (Active)" if token_valid else "EXPIRED / INVALID"
@@ -170,6 +176,86 @@ def cmd_keepalive(args):
         time.sleep(interval)
 
 
+def cmd_bootstrap(args):
+    email = args.email
+    oauth_token = args.oauth_token
+    cdp_url = args.cdp_url
+
+    print("\n" + "=" * 65)
+    print("  GOOGLE MASTER TOKEN HEADLESS BOOTSTRAP (1-TIME SETUP)")
+    print("=" * 65)
+
+    if not email:
+        print("\n[?] Nhập địa chỉ Gmail Google của bạn (ví dụ: tradingbot@gmail.com):")
+        email = input("    Email: ").strip()
+
+    if not email or "@" not in email:
+        print("[!] Email không hợp lệ. Đã hủy.")
+        return 1
+
+    if not oauth_token and not cdp_url:
+        print("\n--- HƯỚNG DẪN LẤY OAUTH TOKEN (CHỈ CẦN LÀM 1 LẦN DUY NHẤT) ---")
+        print("1. Mở trình duyệt Google Chrome trên máy tính của bạn.")
+        print("2. Truy cập địa chỉ sau và đăng nhập tài khoản Google của bạn:")
+        print("   👉  https://accounts.google.com/EmbeddedSetup")
+        print("3. Sau khi đăng nhập xong, mở DevTools (bấm F12 hoặc chuột phải chọn Inspect):")
+        print("   -> Vào tab 'Application' (hoặc 'Bộ nhớ lưu trữ')")
+        print("   -> Bên cột trái chọn: Storage -> Cookies -> https://accounts.google.com")
+        print("   -> Tìm dòng có tên cookie là: oauth_token")
+        print("   -> Copy toàn bộ chuỗi giá trị (Value) của oauth_token.")
+        print("4. Dán giá trị 'oauth_token' vừa copy vào bên dưới:")
+        try:
+            oauth_token = input("    oauth_token: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n[!] Đã hủy thao tác.")
+            return 1
+
+    payload = {"email": email}
+    if oauth_token:
+        payload["oauth_token"] = oauth_token
+    if cdp_url:
+        payload["cdp_url"] = cdp_url
+
+    print(f"\n[*] Gửi yêu cầu khởi tạo Master Token tới Bridge ({BRIDGE_URL})...")
+    try:
+        res = requests.post(
+            f"{BRIDGE_URL}/api/notebooklm/auth/master-token/bootstrap",
+            json=payload,
+            timeout=60,
+        )
+        data = res.json()
+        if res.status_code == 200 and data.get("status") == "success":
+            print("\n[+] THÀNH CÔNG RỰC RỠ! 🎉")
+            print(f"    Tài khoản : {email}")
+            print("    Google Master Token đã được tạo và lưu trữ an toàn (0600).")
+            print("    Từ bây giờ, hệ thống sẽ TỰ ĐỘNG sinh mới cookie (storage_state.json) ngầm vĩnh viễn!")
+            print("    Bạn KHÔNG BAO GIỜ cần phải copy cookie thủ công nữa!")
+            return 0
+        else:
+            print(f"\n[!] Thất bại: {data.get('detail') or data.get('message')}")
+            return 2
+    except requests.exceptions.ConnectionError:
+        print(f"[!] Không thể kết nối tới Bridge service tại {BRIDGE_URL}.")
+        return 1
+
+
+def cmd_remint(args):
+    print(f"\n[*] Kích hoạt headless re-mint từ Google Master Token qua Bridge ({BRIDGE_URL})...")
+    try:
+        res = requests.post(f"{BRIDGE_URL}/api/notebooklm/auth/master-token/remint", timeout=45)
+        if res.status_code == 200:
+            data = res.json()
+            print("[+] THÀNH CÔNG: Cookie mới đã được sinh ra từ Master Token và nạp vào storage_state.json!")
+            print(f"    Chi tiết: {data.get('message')}")
+            return 0
+        else:
+            print(f"[!] Lỗi ({res.status_code}): {res.text}")
+            return 2
+    except requests.exceptions.ConnectionError:
+        print(f"[!] Không thể kết nối tới Bridge tại {BRIDGE_URL}.")
+        return 1
+
+
 def main():
     print_banner()
     parser = argparse.ArgumentParser(description="NotebookLM Authentication & Keepalive Manager")
@@ -190,6 +276,15 @@ def main():
     p_keepalive = subparsers.add_parser("keepalive", help="Run standalone keepalive monitor")
     p_keepalive.add_argument("--interval", type=int, default=900, help="Interval in seconds (default: 900)")
 
+    # bootstrap
+    p_boot = subparsers.add_parser("bootstrap", help="Bootstrap durable Google Master Token (1-time setup)")
+    p_boot.add_argument("--email", help="Google account email (e.g. tradingbot@gmail.com)")
+    p_boot.add_argument("--oauth-token", help="Single-use EmbeddedSetup oauth_token cookie")
+    p_boot.add_argument("--cdp-url", help="Optional Chrome DevTools Protocol endpoint (e.g. http://host.docker.internal:9222)")
+
+    # remint
+    subparsers.add_parser("remint", help="Force re-mint cookies headlessly from Master Token")
+
     args = parser.parse_args()
     if not args.subcommand:
         parser.print_help()
@@ -203,6 +298,10 @@ def main():
         sys.exit(cmd_import(args))
     elif args.subcommand == "keepalive":
         sys.exit(cmd_keepalive(args))
+    elif args.subcommand == "bootstrap":
+        sys.exit(cmd_bootstrap(args))
+    elif args.subcommand == "remint":
+        sys.exit(cmd_remint(args))
 
 
 if __name__ == "__main__":

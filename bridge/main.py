@@ -163,6 +163,13 @@ class NotebookLMAuthImportRequest(BaseModel):
     cookies: Any = Field(..., description="Array of cookies, Playwright storage_state object, or raw JSON string")
 
 
+class NotebookLMMasterTokenBootstrapRequest(BaseModel):
+    email: str = Field(..., description="Google account email")
+    oauth_token: str | None = Field(default=None, description="Single-use EmbeddedSetup oauth_token cookie value")
+    android_id: str | None = Field(default=None, description="Optional Android ID")
+    cdp_url: str | None = Field(default=None, description="Optional CDP URL e.g. http://host.docker.internal:9222")
+
+
 class MarketAnalysisRequest(BaseModel):
     tickers: list[str] = Field(default=["XAUUSD", "SPY", "BTC-USD"])
     tradingagents_backend_url: str = Field(default="http://tradingagents-backend:8000")
@@ -310,6 +317,40 @@ async def notebooklm_auth_import_cookies_endpoint(req: NotebookLMAuthImportReque
     """
     logger.info("Importing new Google session cookies...")
     res = await asyncio.to_thread(notebooklm_client.import_cookies, req.cookies)
+    return res
+
+
+@app.get("/api/notebooklm/auth/master-token/status")
+async def notebooklm_master_token_status_endpoint():
+    """Get non-sensitive status of the durable Google Master Token."""
+    return notebooklm_client.get_master_token_info()
+
+
+@app.post("/api/notebooklm/auth/master-token/bootstrap")
+async def notebooklm_master_token_bootstrap_endpoint(req: NotebookLMMasterTokenBootstrapRequest):
+    """Bootstrap durable master token headless auth for Google account.
+    Once bootstrapped, cookies can be minted headlessly without any browser forever.
+    """
+    logger.info(f"Initiating Master Token bootstrap for account: {req.email}...")
+    res = await asyncio.to_thread(
+        notebooklm_client.bootstrap_master_token,
+        email=req.email,
+        oauth_token=req.oauth_token,
+        android_id=req.android_id,
+        cdp_url=req.cdp_url,
+    )
+    if res.get("status") != "success":
+        raise HTTPException(status_code=400, detail=res.get("message") or "Master token bootstrap failed.")
+    return res
+
+
+@app.post("/api/notebooklm/auth/master-token/remint")
+async def notebooklm_master_token_remint_endpoint():
+    """Force re-mint fresh cookies headlessly from the stored Master Token."""
+    logger.info("Triggering headless cookie re-mint from Master Token...")
+    res = await asyncio.to_thread(notebooklm_client.remint_from_master_token)
+    if res.get("status") != "success":
+        raise HTTPException(status_code=400, detail=res.get("message") or "Master token remint failed.")
     return res
 
 
