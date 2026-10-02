@@ -443,65 +443,77 @@ class NotebookLMClient:
 
         uploaded_sources = []
 
-        # 2. Add Completed Report Markdown Sources
+        # 2. Add Sources Concurrently (Reports & Charts)
+        all_upload_targets: list[tuple[Path, str]] = []
         for md_path_str in report_md_paths:
             if not md_path_str or not isinstance(md_path_str, (str, Path)):
                 continue
             md_file = Path(md_path_str)
             if md_file.exists() and md_file.stat().st_size > 50:
-                logger.info(f"Uploading completed report markdown to notebook {target_nid}: {md_file.name} ({md_file.stat().st_size} bytes)")
-                try:
-                    add_res = subprocess.run(
-                        ["notebooklm", "source", "add", str(md_file.resolve()), "-n", target_nid, "--title", md_file.name, "--json"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    try:
-                        s_info = json.loads(add_res.stdout).get("source", {})
-                        uploaded_sources.append(s_info)
-                    except Exception:
-                        uploaded_sources.append({"title": md_file.name, "path": str(md_file)})
-                except Exception as ex:
-                    logger.warning(f"Failed uploading report markdown {md_file.name}: {ex}")
+                all_upload_targets.append((md_file, "report"))
 
-        # 3. Add Chart Images Sources
         for img in chart_image_paths:
             if not img or not isinstance(img, (str, Path)):
                 continue
             img_path = Path(img)
             if img_path.exists() and img_path.stat().st_size > 500:
-                logger.info(f"Uploading chart to notebook {target_nid}: {img_path.name}")
-                try:
-                    c_res = subprocess.run(
-                        ["notebooklm", "source", "add", str(img_path.resolve()), "-n", target_nid, "--title", img_path.name, "--json"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    s_info = json.loads(c_res.stdout).get("source", {})
-                    uploaded_sources.append(s_info)
-                except Exception as ex:
-                    logger.warning(f"Failed uploading chart {img_path.name}: {ex}")
+                all_upload_targets.append((img_path, "chart"))
 
-        # 4. List sources and wait for any processing ones
+        logger.info(f"Concurrently uploading {len(all_upload_targets)} sources to NotebookLM (pool=4)...")
+        upload_sem = asyncio.Semaphore(4)
+
+        async def _upload_worker(file_path: Path, file_type: str) -> dict[str, Any] | None:
+            async with upload_sem:
+                cmd = [
+                    "notebooklm", "source", "add", str(file_path.resolve()),
+                    "-n", target_nid, "--title", file_path.name, "--json"
+                ]
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode == 0:
+                        try:
+                            s_info = json.loads(stdout.decode()).get("source", {})
+                            return s_info
+                        except Exception:
+                            return {"title": file_path.name, "path": str(file_path)}
+                    else:
+                        err_text = (stderr or stdout).decode().strip()
+                        logger.warning(f"Failed uploading {file_path.name} (exit {proc.returncode}): {err_text}")
+                        return {"title": file_path.name, "path": str(file_path), "error": err_text}
+                except Exception as ex:
+                    logger.warning(f"Exception uploading {file_path.name}: {ex}")
+                    return {"title": file_path.name, "path": str(file_path), "error": str(ex)}
+
+        upload_tasks = [_upload_worker(fp, ft) for fp, ft in all_upload_targets]
+        results = await asyncio.gather(*upload_tasks)
+        uploaded_sources = [r for r in results if r]
+
+        # 3. List sources and poll readiness once for all sources
         final_sources = []
         try:
-            list_res = subprocess.run(
-                ["notebooklm", "source", "list", "-n", target_nid, "--json"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            final_sources = json.loads(list_res.stdout).get("sources", [])
-            for s in final_sources:
-                if s.get("status") != "ready":
-                    logger.info(f"Waiting for source {s.get('title')} ({s.get('id')}) to become ready...")
-                    subprocess.run(
-                        ["notebooklm", "source", "wait", s.get("id"), "-n", target_nid, "--timeout", "60"],
-                        capture_output=True,
-                        text=True,
-                    )
+            for poll_attempt in range(15):  # poll up to 30s
+                list_cmd = ["notebooklm", "source", "list", "-n", target_nid, "--json"]
+                list_proc = await asyncio.create_subprocess_exec(
+                    *list_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                l_stdout, _ = await list_proc.communicate()
+                if list_proc.returncode == 0:
+                    try:
+                        final_sources = json.loads(l_stdout.decode()).get("sources", [])
+                    except Exception:
+                        final_sources = []
+
+                not_ready = [s for s in final_sources if s.get("status") not in ("ready", None)]
+                if not not_ready or poll_attempt >= 14:
+                    break
+                await asyncio.sleep(2)
         except Exception as e:
             logger.warning(f"Error checking sources list: {e}")
 

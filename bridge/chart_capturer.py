@@ -152,8 +152,9 @@ async def capture_tradingview_charts(
     intervals: list[str] | None = None,
     output_dir: str | Path = "/app/output/charts",
     force_recapture: bool = False,
+    max_concurrency: int = 4,
 ) -> list[dict[str, Any]]:
-    """Capture multiple symbols across multiple intervals with optional caching."""
+    """Capture multiple symbols across multiple intervals with optional caching and concurrent browser workers."""
     if intervals is None:
         intervals = ["15", "60", "240", "D"]
 
@@ -188,7 +189,7 @@ async def capture_tradingview_charts(
         logger.info(f"All {len(results)} charts found in cache (force_recapture=False). Skipping browser capture.")
         return results
 
-    logger.info(f"Capturing {len(missing_targets)} charts using Playwright...")
+    logger.info(f"Capturing {len(missing_targets)} charts concurrently (max_concurrency={max_concurrency}) using Playwright...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -204,9 +205,20 @@ async def capture_tradingview_charts(
         )
 
         try:
-            for sym, interval in missing_targets:
-                res = await capture_single_chart(context, sym, interval, out_path)
-                results.append(res)
+            sem = asyncio.Semaphore(max_concurrency)
+
+            async def _worker(target_sym: str, target_interval: str) -> dict[str, Any]:
+                async with sem:
+                    return await capture_single_chart(context, target_sym, target_interval, out_path)
+
+            tasks = [_worker(sym, interval) for sym, interval in missing_targets]
+            captured_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in captured_results:
+                if isinstance(res, Exception):
+                    logger.error(f"Chart worker exception: {res}")
+                    results.append({"status": "error", "error": str(res)})
+                elif isinstance(res, dict):
+                    results.append(res)
         finally:
             await browser.close()
 

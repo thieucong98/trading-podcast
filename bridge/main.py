@@ -200,6 +200,22 @@ class FullPipelineRequest(BaseModel):
     date: str | None = None
 
 
+class PipelinePrepareAssetsRequest(BaseModel):
+    tickers: list[str] = Field(default=["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB"])
+    chart_symbols: list[str] = Field(default=["XAUUSD", "XAGUSD"])
+    chart_intervals: list[str] = Field(default=["5", "15", "60", "240", "D", "W"])
+    tradingagents_backend_url: str = Field(default="http://tradingagents-backend:8000")
+    llm_provider: str | None = None
+    deep_think_llm: str | None = None
+    quick_think_llm: str | None = None
+    max_debate_rounds: int | None = None
+    max_risk_discuss_rounds: int | None = None
+    output_language: str | None = None
+    force_reanalyze: bool = False
+    force_recapture_charts: bool = False
+    date: str | None = None
+
+
 @app.get("/health")
 async def health():
     return {
@@ -671,41 +687,118 @@ async def analyze_markets_endpoint(req: MarketAnalysisRequest):
 
 
 @app.post("/api/pipeline/run-full-flow")
+@app.post("/api/pipeline/prepare-assets")
+async def pipeline_prepare_assets_endpoint(req: PipelinePrepareAssetsRequest):
+    """Concurrently prepare both market analysis reports and TradingView charts in parallel.
+    Guarantees analysis and chart capture execute simultaneously on the event loop.
+    """
+    today = req.date or datetime.datetime.now().strftime("%Y-%m-%d")
+    logger.info(
+        f"Concurrent pipeline asset preparation started: tickers={req.tickers}, "
+        f"chart_symbols={req.chart_symbols}, force_reanalyze={req.force_reanalyze}, "
+        f"force_recapture_charts={req.force_recapture_charts}"
+    )
+
+    analysis_req = MarketAnalysisRequest(
+        tickers=req.tickers,
+        tradingagents_backend_url=req.tradingagents_backend_url,
+        llm_provider=req.llm_provider,
+        deep_think_llm=req.deep_think_llm,
+        quick_think_llm=req.quick_think_llm,
+        max_debate_rounds=req.max_debate_rounds,
+        max_risk_discuss_rounds=req.max_risk_discuss_rounds,
+        output_language=req.output_language,
+        force_reanalyze=req.force_reanalyze,
+        date=today,
+    )
+
+    start_time = datetime.datetime.now()
+
+    # Launch both tasks truly in parallel on the event loop
+    analysis_task = asyncio.create_task(analyze_markets_endpoint(analysis_req))
+    capture_task = asyncio.create_task(
+        capture_tradingview_charts(
+            symbols=req.chart_symbols,
+            intervals=req.chart_intervals,
+            output_dir=CHARTS_DIR,
+            force_recapture=req.force_recapture_charts,
+            max_concurrency=4,
+        )
+    )
+
+    analysis_res, chart_results = await asyncio.gather(analysis_task, capture_task)
+    elapsed_sec = (datetime.datetime.now() - start_time).total_seconds()
+
+    report_files = analysis_res.get("report_files", [])
+    valid_charts = [
+        c for c in chart_results
+        if c.get("status") in ("success", "cached", "fallback_cached") and c.get("filepath")
+    ]
+    chart_files = [c["filepath"] for c in valid_charts]
+
+    logger.info(
+        f"Concurrent asset preparation completed in {elapsed_sec:.2f}s: "
+        f"{len(report_files)} reports, {len(chart_files)} charts."
+    )
+
+    return {
+        "status": "success",
+        "date": today,
+        "elapsed_seconds": round(elapsed_sec, 2),
+        "reports_count": len(report_files),
+        "report_files": report_files,
+        "reused_tickers": analysis_res.get("reused_tickers", []),
+        "fresh_tickers": analysis_res.get("fresh_tickers", []),
+        "charts_captured": len(chart_files),
+        "chart_files": chart_files,
+        "charts": valid_charts,
+        "analysis_summary": analysis_res,
+    }
+
+
+@app.post("/api/pipeline/run-full-daily")
 async def run_full_pipeline(req: FullPipelineRequest):
     """Complete end-to-end execution without fake dummy fallbacks:
-    1. Triggers TradingAgents jobs for tickers & verifies real complete reports
-    2. Captures TradingView charts for specified symbols & intervals
-    3. Uploads verified sources to Google NotebookLM
-    4. Triggers Vietnamese Studio Audio generation
+    1. Concurrently prepares Market Analysis & captures TradingView charts in parallel
+    2. Uploads verified sources to Google NotebookLM
+    3. Triggers Vietnamese Studio Audio generation
     """
     today = req.date or datetime.datetime.now().strftime("%Y-%m-%d")
     logger.info(f"Starting Full Trading Podcast Pipeline for date: {today}")
 
-    # 1. Run rigorous market analysis
-    analysis_res = await analyze_markets_endpoint(
-        MarketAnalysisRequest(
-            tickers=req.tickers,
-            tradingagents_backend_url=req.tradingagents_backend_url,
-            llm_provider=req.llm_provider,
-            deep_think_llm=req.deep_think_llm,
-            quick_think_llm=req.quick_think_llm,
-            max_debate_rounds=req.max_debate_rounds,
-            max_risk_discuss_rounds=req.max_risk_discuss_rounds,
-            output_language=req.output_language,
-            force_reanalyze=req.force_reanalyze,
-            date=today,
+    # 1 & 2. Run market analysis and chart capture CONCURRENTLY
+    analysis_task = asyncio.create_task(
+        analyze_markets_endpoint(
+            MarketAnalysisRequest(
+                tickers=req.tickers,
+                tradingagents_backend_url=req.tradingagents_backend_url,
+                llm_provider=req.llm_provider,
+                deep_think_llm=req.deep_think_llm,
+                quick_think_llm=req.quick_think_llm,
+                max_debate_rounds=req.max_debate_rounds,
+                max_risk_discuss_rounds=req.max_risk_discuss_rounds,
+                output_language=req.output_language,
+                force_reanalyze=req.force_reanalyze,
+                date=today,
+            )
         )
     )
-    report_files = analysis_res["report_files"]
-
-    # 2. Capture TradingView Charts
-    chart_results = await capture_tradingview_charts(
-        symbols=req.chart_symbols,
-        intervals=req.chart_intervals,
-        output_dir=CHARTS_DIR,
-        force_recapture=req.force_recapture_charts,
+    capture_task = asyncio.create_task(
+        capture_tradingview_charts(
+            symbols=req.chart_symbols,
+            intervals=req.chart_intervals,
+            output_dir=CHARTS_DIR,
+            force_recapture=req.force_recapture_charts,
+            max_concurrency=4,
+        )
     )
-    chart_files = [c["filepath"] for c in chart_results if c.get("status") == "success"]
+
+    analysis_res, chart_results = await asyncio.gather(analysis_task, capture_task)
+    report_files = analysis_res["report_files"]
+    chart_files = [
+        c["filepath"] for c in chart_results
+        if c.get("status") in ("success", "cached", "fallback_cached") and c.get("filepath")
+    ]
 
     # 3. Upload Completed Reports & Charts to NotebookLM
     upload_result = await notebooklm_client.upload_sources_to_notebooklm(

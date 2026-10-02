@@ -228,21 +228,21 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://trading-podcast-bridge:8010/api/pipeline/analyze-markets",
+        "url": "http://trading-podcast-bridge:8010/api/pipeline/prepare-assets",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"tickers\": {{ JSON.stringify($('Global Pipeline Settings').first().json.tickers) }},\n  \"tradingagents_backend_url\": \"http://tradingagents-backend:8000\",\n  \"llm_provider\": {{ JSON.stringify($('Global Pipeline Settings').first().json.llm_provider) }},\n  \"deep_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.deep_think_llm) }},\n  \"quick_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.quick_think_llm) }},\n  \"max_debate_rounds\": {{ $('Global Pipeline Settings').first().json.max_debate_rounds }},\n  \"max_risk_discuss_rounds\": {{ $('Global Pipeline Settings').first().json.max_risk_discuss_rounds }},\n  \"output_language\": {{ JSON.stringify($('Global Pipeline Settings').first().json.output_language) }},\n  \"force_reanalyze\": {{ $('Global Pipeline Settings').first().json.force_reanalyze }}\n}",
+        "jsonBody": "={\n  \"tickers\": {{ JSON.stringify($('Global Pipeline Settings').first().json.tickers) }},\n  \"tradingagents_backend_url\": \"http://tradingagents-backend:8000\",\n  \"llm_provider\": {{ JSON.stringify($('Global Pipeline Settings').first().json.llm_provider) }},\n  \"deep_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.deep_think_llm) }},\n  \"quick_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.quick_think_llm) }},\n  \"max_debate_rounds\": {{ $('Global Pipeline Settings').first().json.max_debate_rounds }},\n  \"max_risk_discuss_rounds\": {{ $('Global Pipeline Settings').first().json.max_risk_discuss_rounds }},\n  \"output_language\": {{ JSON.stringify($('Global Pipeline Settings').first().json.output_language) }},\n  \"force_reanalyze\": {{ $('Global Pipeline Settings').first().json.force_reanalyze }},\n  \"chart_symbols\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_symbols) }},\n  \"chart_intervals\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_intervals) }},\n  \"force_recapture_charts\": {{ $('Global Pipeline Settings').first().json.force_recapture_charts }}\n}",
         "options": {
           "timeout": 1800000
         }
       },
-      "id": "http-analyze-markets",
-      "name": "Analyze & Download Completed Reports (TradingAgents AI)",
+      "id": "http-prepare-assets",
+      "name": "Prepare Reports & Charts Concurrently (Bridge AI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        800,
-        280
+        900,
+        440
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -251,48 +251,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://trading-podcast-bridge:8010/api/charts/capture",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"symbols\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_symbols) }},\n  \"intervals\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_intervals) }},\n  \"force_recapture\": {{ $('Global Pipeline Settings').first().json.force_recapture_charts }}\n}",
-        "options": {
-          "timeout": 600000
-        }
-      },
-      "id": "http-capture-charts",
-      "name": "Capture Multi-Timeframe Charts (TradingView)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        800,
-        560
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
-    },
-    {
-      "parameters": {
-        "mode": "chooseBranch",
-        "output": "specifiedInput",
-        "useDataOfInput": 1
-      },
-      "id": "merge-analysis-charts",
-      "name": "Sync Reports & Charts Data",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        1150,
-        420
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
         "url": "http://trading-podcast-bridge:8010/api/notebooklm/upload-sources",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"report_md_paths\": {{ JSON.stringify($('Analyze & Download Completed Reports (TradingAgents AI)').first().json.report_files) }},\n  \"chart_image_paths\": {{ JSON.stringify($('Capture Multi-Timeframe Charts (TradingView)').first().json.charts.filter(c => c && c.filepath).map(c => c.filepath)) }}\n}",
+        "jsonBody": "={\n  \"report_md_paths\": {{ JSON.stringify($('Prepare Reports & Charts Concurrently (Bridge AI)').first().json.report_files) }},\n  \"chart_image_paths\": {{ JSON.stringify($('Prepare Reports & Charts Concurrently (Bridge AI)').first().json.chart_files) }}\n}",
         "options": {
           "timeout": 600000
         }
@@ -302,8 +264,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1500,
-        420
+        1300,
+        440
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -325,8 +287,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1850,
-        420
+        1700,
+        440
       ],
       "retryOnFail": true,
       "maxTries": 2,
@@ -334,15 +296,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const settings = $('Global Pipeline Settings').first().json;\nconst analysis = $('Analyze & Download Completed Reports (TradingAgents AI)').first().json;\nconst charts = $('Capture Multi-Timeframe Charts (TradingView)').first().json;\nconst upload = $('Upload Completed Reports & Charts to NotebookLM').first().json;\nconst podcast = $('Generate Vietnamese Studio Audio (NotebookLM)').first().json;\n\nreturn [{\n  json: {\n    pipeline_status: \"success\",\n    execution_time: new Date().toISOString(),\n    caching_mode: {\n      force_reanalyze: settings.force_reanalyze,\n      force_recapture_charts: settings.force_recapture_charts\n    },\n    notebooklm: {\n      notebook_id: upload.notebook_id,\n      notebook_title: upload.notebook_title,\n      notebook_url: upload.notebook_url,\n      sources_total_count: upload.sources_count,\n      completed_reports_count: upload.report_sources_count || (analysis.report_files ? analysis.report_files.length : 0),\n      chart_images_count: upload.chart_sources_count || (charts.charts ? charts.charts.length : 0),\n      sources: upload.sources,\n      studio_generation_status: podcast.status,\n      studio_task_id: podcast.task_id\n    },\n    llm_config: {\n      provider: settings.llm_provider,\n      deep_think_llm: settings.deep_think_llm,\n      quick_think_llm: settings.quick_think_llm,\n      debate_rounds: settings.max_debate_rounds,\n      risk_rounds: settings.max_risk_discuss_rounds,\n      language: settings.output_language\n    },\n    completed_reports_downloaded: analysis.report_files || [],\n    charts_captured: charts.charts ? charts.charts.map(c => c.filename) : []\n  }\n}];"
+        "jsCode": "const settings = $('Global Pipeline Settings').first().json;\nconst prep = $('Prepare Reports & Charts Concurrently (Bridge AI)').first().json;\nconst upload = $('Upload Completed Reports & Charts to NotebookLM').first().json;\nconst podcast = $('Generate Vietnamese Studio Audio (NotebookLM)').first().json;\n\nreturn [{\n  json: {\n    pipeline_status: \"success\",\n    execution_time: new Date().toISOString(),\n    caching_mode: {\n      force_reanalyze: settings.force_reanalyze,\n      force_recapture_charts: settings.force_recapture_charts\n    },\n    notebooklm: {\n      notebook_id: upload.notebook_id,\n      notebook_title: upload.notebook_title,\n      notebook_url: upload.notebook_url,\n      sources_total_count: upload.sources_count,\n      completed_reports_count: upload.report_sources_count || (prep.report_files ? prep.report_files.length : 0),\n      chart_images_count: upload.chart_sources_count || (prep.charts ? prep.charts.length : (prep.chart_files ? prep.chart_files.length : 0)),\n      sources: upload.sources,\n      studio_generation_status: podcast.status,\n      studio_task_id: podcast.task_id\n    },\n    llm_config: {\n      provider: settings.llm_provider,\n      deep_think_llm: settings.deep_think_llm,\n      quick_think_llm: settings.quick_think_llm,\n      debate_rounds: settings.max_debate_rounds,\n      risk_rounds: settings.max_risk_discuss_rounds,\n      language: settings.output_language\n    },\n    completed_reports_downloaded: prep.report_files || [],\n    charts_captured: prep.charts ? prep.charts.map(c => c.filename) : (prep.chart_files || [])\n  }\n}];"
       },
       "id": "summary-node-1",
       "name": "Pipeline Summary & Artifacts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2200,
-        420
+        2100,
+        440
       ]
     }
   ],
@@ -428,41 +390,14 @@
       "main": [
         [
           {
-            "node": "Analyze & Download Completed Reports (TradingAgents AI)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Capture Multi-Timeframe Charts (TradingView)",
+            "node": "Prepare Reports & Charts Concurrently (Bridge AI)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Analyze & Download Completed Reports (TradingAgents AI)": {
-      "main": [
-        [
-          {
-            "node": "Sync Reports & Charts Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Capture Multi-Timeframe Charts (TradingView)": {
-      "main": [
-        [
-          {
-            "node": "Sync Reports & Charts Data",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Sync Reports & Charts Data": {
+    "Prepare Reports & Charts Concurrently (Bridge AI)": {
       "main": [
         [
           {
