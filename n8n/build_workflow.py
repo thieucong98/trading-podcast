@@ -271,7 +271,7 @@ workflow = {
                 "specifyBody": "json",
                 "jsonBody": "={\n  \"tickers\": {{ JSON.stringify($('Global Pipeline Settings').first().json.tickers) }},\n  \"tradingagents_backend_url\": \"http://tradingagents-backend:8000\",\n  \"llm_provider\": {{ JSON.stringify($('Global Pipeline Settings').first().json.llm_provider) }},\n  \"deep_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.deep_think_llm) }},\n  \"quick_think_llm\": {{ JSON.stringify($('Global Pipeline Settings').first().json.quick_think_llm) }},\n  \"max_debate_rounds\": {{ $('Global Pipeline Settings').first().json.max_debate_rounds }},\n  \"max_risk_discuss_rounds\": {{ $('Global Pipeline Settings').first().json.max_risk_discuss_rounds }},\n  \"output_language\": {{ JSON.stringify($('Global Pipeline Settings').first().json.output_language) }},\n  \"force_reanalyze\": {{ $('Global Pipeline Settings').first().json.force_reanalyze }},\n  \"chart_symbols\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_symbols) }},\n  \"chart_intervals\": {{ JSON.stringify($('Global Pipeline Settings').first().json.chart_intervals) }},\n  \"force_recapture_charts\": {{ $('Global Pipeline Settings').first().json.force_recapture_charts }}\n}",
                 "options": {
-                    "timeout": 1800000
+                    "timeout": 3600000
                 }
             },
             "id": "http-prepare-assets",
@@ -279,9 +279,7 @@ workflow = {
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
             "position": [900, 440],
-            "retryOnFail": True,
-            "maxTries": 3,
-            "waitBetweenTries": 10000
+            "retryOnFail": False
         },
         {
             "parameters": {

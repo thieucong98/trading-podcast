@@ -44,6 +44,7 @@ services:
       - NOTEBOOKLM_KEEPALIVE_INTERVAL=900
       - NOTEBOOKLM_REFRESH_CMD=notebooklm auth refresh --allow-headless
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Ho_Chi_Minh
       - DEFAULT_LLM_PROVIDER=openai_compatible
       - DEFAULT_DEEP_THINK_LLM=ag/gemini-3.8-flash-high
       - DEFAULT_QUICK_THINK_LLM=ag/gemini-3.8-flash-high

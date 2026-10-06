@@ -397,12 +397,15 @@ def _download_report_markdown(base_url: str, job_id: str) -> str | None:
 
     return None
 
+_in_flight_analyses: dict[str, asyncio.Task] = {}
+_in_flight_lock = asyncio.Lock()
+
 
 async def _poll_job_until_done(
     base_url: str,
     job_id: str,
     ticker: str,
-    max_wait_seconds: int = 1800,
+    max_wait_seconds: int = 3600,
     poll_interval: int = 10,
 ) -> tuple[bool, str | None]:
     """Poll a TradingAgents job until completed, failed, or timed out."""
@@ -412,7 +415,7 @@ async def _poll_job_until_done(
 
     while elapsed < max_wait_seconds:
         try:
-            poll_res = requests.get(f"{base_url}/api/v1/jobs/{job_id}", timeout=10)
+            poll_res = await asyncio.to_thread(requests.get, f"{base_url}/api/v1/jobs/{job_id}", timeout=10)
             if poll_res.status_code == 200:
                 job_info = poll_res.json()
                 st = job_info.get("status")
@@ -446,9 +449,9 @@ async def _execute_ticker_analysis(
     today: str,
     job_payload: dict[str, Any],
     existing_job_id: str | None = None,
-    max_retries: int = 2,
+    max_retries: int = 1,
 ) -> tuple[str, str, int]:
-    """Run or adopt analysis for a single ticker with automatic retries on transient errors.
+    """Run or adopt analysis for a single ticker with resilience against connection drops.
     Returns (ticker, saved_file_path, content_length).
     Raises RuntimeError on permanent failure.
     """
@@ -457,40 +460,42 @@ async def _execute_ticker_analysis(
 
     current_job_id = existing_job_id
     attempts = 0
+    error_msg: str | None = None
 
     while attempts <= max_retries:
         if not current_job_id:
             logger.info(f"[{ticker}] Starting new analysis job (attempt {attempts + 1}/{max_retries + 1})...")
             try:
-                res = requests.post(f"{base_url}/api/v1/jobs", json=job_payload, timeout=20)
+                res = await asyncio.to_thread(requests.post, f"{base_url}/api/v1/jobs", json=job_payload, timeout=20)
                 if res.status_code in (200, 201):
                     current_job_id = res.json().get("id")
                     logger.info(f"[{ticker}] Spawned Job ID: {current_job_id}")
                 else:
-                    err_msg = f"HTTP {res.status_code}: {res.text}"
-                    logger.error(f"[{ticker}] Failed creating job: {err_msg}")
+                    error_msg = f"HTTP {res.status_code}: {res.text}"
+                    logger.error(f"[{ticker}] Failed creating job: {error_msg}")
                     attempts += 1
                     if attempts <= max_retries:
                         await asyncio.sleep(10)
                     continue
             except Exception as e:
-                logger.error(f"[{ticker}] Request error creating job: {e}")
+                error_msg = f"Request error creating job: {e}"
+                logger.error(f"[{ticker}] {error_msg}")
                 attempts += 1
                 if attempts <= max_retries:
                     await asyncio.sleep(10)
                 continue
 
         # Poll the active job
-        success, error_msg = await _poll_job_until_done(
+        success, poll_err = await _poll_job_until_done(
             base_url=base_url,
             job_id=current_job_id,
             ticker=ticker,
-            max_wait_seconds=1800,
+            max_wait_seconds=3600,
             poll_interval=10,
         )
 
         if success:
-            content = _download_report_markdown(base_url, current_job_id)
+            content = await asyncio.to_thread(_download_report_markdown, base_url, current_job_id)
             if content and len(content) > 1000:
                 md_path.write_text(content, encoding="utf-8")
                 logger.info(f"[{ticker}] Successfully saved verified report to {md_path} ({len(content)} chars)")
@@ -498,14 +503,17 @@ async def _execute_ticker_analysis(
             else:
                 logger.warning(f"[{ticker}] Job {current_job_id} completed but report content is too short/missing ({len(content or '')} chars)")
                 error_msg = "Report content missing or under 1000 characters"
+        else:
+            error_msg = poll_err
 
-        # If job failed or report was invalid, prepare for retry
-        attempts += 1
-        current_job_id = None
-        if attempts <= max_retries:
-            backoff_sec = attempts * 15
-            logger.warning(f"[{ticker}] Retrying in {backoff_sec}s after failure: {error_msg}...")
-            await asyncio.sleep(backoff_sec)
+        # If job was cancelled by user, DO NOT RETRY!
+        if error_msg and "cancelled" in str(error_msg).lower():
+            logger.warning(f"[{ticker}] Job {current_job_id} was cancelled. Halting without respawning duplicate tasks.")
+            raise RuntimeError(f"Analysis for {ticker} was cancelled: {error_msg}")
+
+        # If active job finished with failure or timeout, DO NOT loop to create duplicate tasks!
+        logger.error(f"[{ticker}] Job {current_job_id} failed: {error_msg}")
+        raise RuntimeError(f"Analysis failed for {ticker} (Job ID: {current_job_id}): {error_msg}")
 
     raise RuntimeError(f"Analysis failed for {ticker} after {max_retries + 1} attempts. Last error: {error_msg}")
 
@@ -594,27 +602,28 @@ async def analyze_markets_endpoint(req: MarketAnalysisRequest):
                     f"(provider={cand_p} vs {provider}, deep={cand_deep} vs {deep_model}). Re-analyzing with requested global settings."
                 )
 
-        # If not reusable, check if currently running with matching config
-        if not req.force_reanalyze and ticker in existing_running:
+        # Check if already running or queued in backend for today
+        if ticker in existing_running:
             cand = existing_running[ticker]
+            job_id = cand["id"]
+            cand_st = cand.get("status", "running")
             cand_p = cand.get("llm_provider")
-            cand_deep = cand.get("deep_think_llm")
-            if ((not provider) or (cand_p == provider)) and ((not deep_model) or (cand_deep == deep_model)):
-                job_id = cand["id"]
-                logger.info(f"[{ticker}] Adopting currently running job {job_id} (matching provider={cand_p})")
-                tickers_to_execute[ticker] = job_id
-            else:
-                logger.info(f"[{ticker}] Running job {cand['id']} uses different provider ({cand_p} vs {provider}). Starting new job.")
-                tickers_to_execute[ticker] = None
+            logger.info(f"[{ticker}] Adopting already {cand_st} job {job_id} for {today} (provider={cand_p}) to prevent duplicate worker execution")
+            tickers_to_execute[ticker] = job_id
         else:
             tickers_to_execute[ticker] = None
 
-
-    # 3. Concurrently execute/poll all remaining tickers
+    # 3. Concurrently execute/poll all remaining tickers with in-flight deduplication
     if tickers_to_execute:
         logger.info(f"Executing/polling {len(tickers_to_execute)} tickers concurrently: {list(tickers_to_execute.keys())}")
 
         async def _run_one(t: str, jid: str | None):
+            async with _in_flight_lock:
+                if t in _in_flight_analyses and not _in_flight_analyses[t].done():
+                    logger.info(f"[{t}] In-flight analysis task already active in Bridge. Reusing existing task.")
+                    task = _in_flight_analyses[t]
+                    return await task
+
             asset_type = "crypto" if "BTC" in t or "ETH" in t else "stock"
             payload = {
                 "ticker": t,
@@ -628,14 +637,26 @@ async def analyze_markets_endpoint(req: MarketAnalysisRequest):
                 "max_debate_rounds": debate_rounds,
                 "max_risk_discuss_rounds": risk_rounds,
             }
-            return await _execute_ticker_analysis(
+
+            coro = _execute_ticker_analysis(
                 base_url=base_url,
                 ticker=t,
                 today=today,
                 job_payload=payload,
                 existing_job_id=jid,
-                max_retries=2,
+                max_retries=1,
             )
+            created_task = asyncio.create_task(coro)
+            async with _in_flight_lock:
+                _in_flight_analyses[t] = created_task
+
+            try:
+                res = await created_task
+                return res
+            finally:
+                async with _in_flight_lock:
+                    if _in_flight_analyses.get(t) is created_task:
+                        _in_flight_analyses.pop(t, None)
 
         tasks = [_run_one(t, jid) for t, jid in tickers_to_execute.items()]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -726,7 +747,14 @@ async def pipeline_prepare_assets_endpoint(req: PipelinePrepareAssetsRequest):
         )
     )
 
-    analysis_res, chart_results = await asyncio.gather(analysis_task, capture_task)
+    results = await asyncio.gather(analysis_task, capture_task, return_exceptions=True)
+    if isinstance(results[0], Exception):
+        logger.error(f"Market analysis task failed: {results[0]}")
+        raise results[0]
+    analysis_res = results[0]
+    chart_results = results[1] if isinstance(results[1], list) else []
+    if isinstance(results[1], Exception):
+        logger.error(f"Chart capture task encountered error: {results[1]}")
     elapsed_sec = (datetime.datetime.now() - start_time).total_seconds()
 
     report_files = analysis_res.get("report_files", [])
@@ -793,7 +821,14 @@ async def run_full_pipeline(req: FullPipelineRequest):
         )
     )
 
-    analysis_res, chart_results = await asyncio.gather(analysis_task, capture_task)
+    results = await asyncio.gather(analysis_task, capture_task, return_exceptions=True)
+    if isinstance(results[0], Exception):
+        logger.error(f"Market analysis task failed in full pipeline: {results[0]}")
+        raise results[0]
+    analysis_res = results[0]
+    chart_results = results[1] if isinstance(results[1], list) else []
+    if isinstance(results[1], Exception):
+        logger.error(f"Chart capture task encountered error in full pipeline: {results[1]}")
     report_files = analysis_res["report_files"]
     chart_files = [
         c["filepath"] for c in chart_results
