@@ -1,27 +1,12 @@
 import json
 from pathlib import Path
 
-podcast_prompt_text = (
-    "1. The Main Event: Gold & Silver (GC=F & SI=F):\n\n"
-    "This episode is exclusively about Precious Metals. Gold (GC=F) and Silver (SI=F) are the absolute core focus.\n\n"
-    "Synthesize the reports to break down current price action, momentum, and structural trends for both metals.\n\n"
-    "Discuss if Silver is leading or lagging Gold in the current cycle.\n\n"
-    "2. The Macro Web (Using ^TNX & DX-Y.NYB as drivers):\n\n"
-    "Do NOT analyze the US Dollar (DX-Y.NYB) or 10-Year Yields (^TNX) as standalone trades.\n\n"
-    "Instead, analyze them strictly as macro tailwinds or headwinds for the metals. "
-    "Explain how the current trend in the 10-Year Yield and the Dollar is directly impacting the pricing of GC=F and SI=F "
-    '(e.g., "Are rising yields crushing gold, or is gold ignoring the strong dollar?").\n\n'
-    "3. Risk Sentiment Rotation (Using SPY & BTC-USD):\n\n"
-    "Use the SPY (Equities) and BTC-USD (Crypto) data purely as risk-appetite barometers.\n\n"
-    'Evaluate the capital flow: Are we seeing a "risk-on" environment where capital flows to SPY/BTC, '
-    'or a "risk-off" environment where traders are seeking safe-haven rotation into Gold and Silver?\n\n'
-    "4. The 'Trade Desk' Action Plan (Crucial Segment):\n\n"
-    "Dedicate the final 3-4 minutes to actionable trade setups.\n\n"
-    "Extract and clearly announce the specific potential entry zones, key support/resistance levels, "
-    "and invalidation points (stop losses) for GC=F and SI=F based EXACTLY on the provided reports.\n\n"
-    "Frame these levels confidently, like a senior trader giving a playbook to their desk. "
-    '(e.g., "For Gold, the desk is looking at a high-probability entry around [Price]...").'
-)
+prompt_file = Path(__file__).resolve().parent / "prompts" / "institutional_market_prompt.md"
+if prompt_file.exists():
+    podcast_prompt_text = prompt_file.read_text(encoding="utf-8").strip()
+else:
+    podcast_prompt_text = "Phân tích thị trường tài chính chuyên sâu Vàng, Bạc, SPY, Bitcoin."
+
 
 summary_js_code = """const settings = $('Global Pipeline Settings').first().json;
 const prep = $('Prepare Reports & Charts Concurrently (Bridge AI)').first().json;
@@ -84,7 +69,7 @@ workflow = {
             "name": "Schedule Trigger (7:00 AM Weekdays)",
             "type": "n8n-nodes-base.scheduleTrigger",
             "typeVersion": 1.2,
-            "position": [200, 200]
+            "position": [208, 208]
         },
         {
             "parameters": {},
@@ -92,7 +77,7 @@ workflow = {
             "name": "Manual Trigger (Run On-Demand)",
             "type": "n8n-nodes-base.manualTrigger",
             "typeVersion": 1,
-            "position": [200, 360]
+            "position": [208, 368]
         },
         {
             "parameters": {
@@ -105,7 +90,7 @@ workflow = {
             "name": "Webhook Trigger (GET)",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2,
-            "position": [200, 520],
+            "position": [208, 528],
             "webhookId": "run-trading-podcast"
         },
         {
@@ -116,24 +101,23 @@ workflow = {
                 "options": {}
             },
             "id": "webhook-trigger-post",
-            "name": "Webhook Trigger (POST)",
+            "name": "force all",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2,
-            "position": [200, 680],
+            "position": [208, 688],
             "webhookId": "run-trading-podcast-post"
         },
         {
             "parameters": {
-                "httpMethod": "GET",
                 "path": "run-trading-podcast-fast",
                 "responseMode": "lastNode",
                 "options": {}
             },
             "id": "webhook-trigger-fast-get",
-            "name": "Webhook Trigger Fast (GET)",
+            "name": "force recapture",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2,
-            "position": [200, 840],
+            "position": [208, 848],
             "webhookId": "run-trading-podcast-fast-get"
         },
         {
@@ -144,10 +128,10 @@ workflow = {
                 "options": {}
             },
             "id": "webhook-trigger-fast-post",
-            "name": "Webhook Trigger Fast (POST)",
+            "name": "skip all",
             "type": "n8n-nodes-base.webhook",
             "typeVersion": 2,
-            "position": [200, 980],
+            "position": [208, 992],
             "webhookId": "run-trading-podcast-fast-post"
         },
         {
@@ -179,7 +163,7 @@ workflow = {
             "name": "n8n Form Trigger (Podcast Fast Launcher)",
             "type": "n8n-nodes-base.formTrigger",
             "typeVersion": 2.2,
-            "position": [200, 1120],
+            "position": [208, 1120],
             "webhookId": "run-podcast-form"
         },
         {
@@ -237,7 +221,7 @@ workflow = {
                         {
                             "id": "setting-tickers",
                             "name": "tickers",
-                            "value": '={{ $json?.tickers || $json?.body?.tickers || ($json?.query?.tickers ? (typeof $json.query.tickers === "string" ? $json.query.tickers.split(",").map(s => s.trim()) : $json.query.tickers) : ["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB"]) }}',
+                            "value": '={{ $json?.tickers || $json?.body?.tickers || ($json?.query?.tickers ? (typeof $json.query.tickers === "string" ? $json.query.tickers.split(",").map(s => s.trim()) : $json.query.tickers) : ["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB", "CL=F", "MGC=F", "ZQ=F"]) }}',
                             "type": "array"
                         },
                         {
@@ -284,7 +268,7 @@ workflow = {
             "name": "Global Pipeline Settings",
             "type": "n8n-nodes-base.set",
             "typeVersion": 3.4,
-            "position": [520, 440]
+            "position": [528, 448]
         },
         {
             "parameters": {
@@ -301,7 +285,7 @@ workflow = {
             "name": "Prepare Reports & Charts Concurrently (Bridge AI)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [900, 440],
+            "position": [912, 448],
             "retryOnFail": False
         },
         {
@@ -319,7 +303,7 @@ workflow = {
             "name": "Upload Completed Reports & Charts to NotebookLM",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [1300, 440],
+            "position": [1312, 448],
             "retryOnFail": True,
             "maxTries": 3,
             "waitBetweenTries": 5000
@@ -339,7 +323,7 @@ workflow = {
             "name": "Generate Vietnamese Studio Audio (NotebookLM)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [1700, 440],
+            "position": [1712, 448],
             "retryOnFail": True,
             "maxTries": 2,
             "waitBetweenTries": 5000
@@ -359,7 +343,7 @@ workflow = {
             "name": "Generate Video Overview (NotebookLM)",
             "type": "n8n-nodes-base.httpRequest",
             "typeVersion": 4.2,
-            "position": [2100, 440],
+            "position": [2112, 448],
             "retryOnFail": False
         },
         {
@@ -370,7 +354,7 @@ workflow = {
             "name": "Pipeline Summary & Artifacts",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
-            "position": [2500, 440]
+            "position": [2512, 448]
         }
     ],
     "connections": {
@@ -407,7 +391,7 @@ workflow = {
                 ]
             ]
         },
-        "Webhook Trigger (POST)": {
+        "force all": {
             "main": [
                 [
                     {
@@ -418,7 +402,7 @@ workflow = {
                 ]
             ]
         },
-        "Webhook Trigger Fast (GET)": {
+        "force recapture": {
             "main": [
                 [
                     {
@@ -429,7 +413,7 @@ workflow = {
                 ]
             ]
         },
-        "Webhook Trigger Fast (POST)": {
+        "skip all": {
             "main": [
                 [
                     {
@@ -508,7 +492,8 @@ workflow = {
         }
     },
     "settings": {
-        "executionOrder": "v1"
+        "executionOrder": "v1",
+        "binaryMode": "separate"
     }
 }
 

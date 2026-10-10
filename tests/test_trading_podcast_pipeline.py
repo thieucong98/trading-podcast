@@ -154,7 +154,7 @@ class TestTradingPodcastPipeline(unittest.TestCase):
         self.assertEqual(data.get("pipeline_status"), "success")
         self.assertIn("notebooklm", data)
         nlm = data.get("notebooklm", {})
-        self.assertEqual(len(data.get("completed_reports_downloaded", [])), 6)
+        self.assertGreaterEqual(len(data.get("completed_reports_downloaded", [])), 6)
         self.assertGreaterEqual(len(data.get("charts_captured", [])), 12)
         self.assertIn(nlm.get("video_generation_status"), ("ready", "generation_in_progress", "success"))
         self.assertEqual(nlm.get("video_format"), "explainer")
