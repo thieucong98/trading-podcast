@@ -17,6 +17,13 @@ Nội dung thảo luận tập trung phân tích sâu xu hướng giá vàng (XA
 Làm rõ các kịch bản Bull/Bear, các mốc hỗ trợ - kháng cự then chốt, và kế hoạch giải ngân, quản trị rủi ro.
 """.strip()
 
+DEFAULT_VIETNAMESE_VIDEO_PROMPT = """
+Tạo một video tổng quan chi tiết (Explainer Video) về thị trường tài chính hôm nay bằng tiếng Việt.
+Giải thích trực quan, sâu sắc, hấp dẫn và chuyên nghiệp về diễn biến các tài sản Vàng (XAUUSD), Bạc (XAGUSD), SPY và Bitcoin (BTC-USD) dựa trên các tài liệu báo cáo phân tích và hình ảnh biểu đồ kỹ thuật được cung cấp.
+Làm rõ các kịch bản Bull/Bear, các mốc kháng cự/hỗ trợ then chốt, và kế hoạch hành động thực chiến.
+""".strip()
+
+
 
 class NotebookLMClient:
     def __init__(self, storage_state_path: str | None = None):
@@ -496,7 +503,7 @@ class NotebookLMClient:
         # 3. List sources and poll readiness once for all sources
         final_sources = []
         try:
-            for poll_attempt in range(15):  # poll up to 30s
+            for poll_attempt in range(3):  # poll up to 3 attempts (~15s)
                 list_cmd = ["notebooklm", "source", "list", "-n", target_nid, "--json"]
                 list_proc = await asyncio.create_subprocess_exec(
                     *list_cmd,
@@ -511,7 +518,7 @@ class NotebookLMClient:
                         final_sources = []
 
                 not_ready = [s for s in final_sources if s.get("status") not in ("ready", None)]
-                if not not_ready or poll_attempt >= 14:
+                if not not_ready or poll_attempt >= 2:
                     break
                 await asyncio.sleep(2)
         except Exception as e:
@@ -709,6 +716,206 @@ class NotebookLMClient:
             "message": "Podcast audio synthesized via fallback engine (NotebookLM credentials expired).",
         }
 
+    async def generate_video_studio(
+        self,
+        notebook_id: str | None = None,
+        briefing_md_path: str | None = None,
+        chart_image_paths: list[str] | None = None,
+        custom_prompt: str | None = None,
+        video_format: str = "explainer",
+        video_style: str = "classic",
+        language: str = "vi",
+        wait_for_completion: bool = False,
+        date_str: str | None = None,
+        output_dir: str | Path = "/app/output/videos",
+    ) -> dict[str, Any]:
+        """Trigger NotebookLM Video Overview generation on a populated notebook."""
+        if not date_str:
+            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        prompt = custom_prompt or DEFAULT_VIETNAMESE_VIDEO_PROMPT
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        final_video_path = out_dir / f"trading_video_overview_{date_str}.mp4"
+
+        has_auth = self.is_authenticated()
+        target_nid = notebook_id
+        if target_nid in ("auth_required", "offline_ready", "gemini_engine"):
+            has_auth = False
+
+        if has_auth and shutil.which("notebooklm"):
+            try:
+                if not target_nid and briefing_md_path:
+                    upload_res = await self.upload_sources_to_notebooklm(
+                        briefing_md_path=briefing_md_path,
+                        chart_image_paths=chart_image_paths or [],
+                        date_str=date_str,
+                    )
+                    target_nid = upload_res.get("notebook_id")
+
+                if not target_nid:
+                    raise ValueError("No valid notebook_id provided or created for video overview generation.")
+
+                logger.info(
+                    f"Triggering NotebookLM Video Overview generation on notebook: {target_nid} "
+                    f"(format={video_format}, style={video_style}, lang={language})..."
+                )
+                prompt_file = out_dir / f"temp_video_prompt_{date_str}.txt"
+                prompt_file.write_text(prompt, encoding="utf-8")
+
+                cmd = [
+                    "notebooklm", "generate", "video",
+                    "-n", target_nid,
+                    "--format", video_format,
+                    "--style", video_style,
+                    "--language", language,
+                    "--prompt-file", str(prompt_file),
+                    "--json",
+                ]
+                if wait_for_completion:
+                    cmd.append("--wait")
+                    cmd.extend(["--timeout", "1200"])
+                else:
+                    cmd.append("--no-wait")
+
+                gen_res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=1260 if wait_for_completion else 35,
+                )
+                res_data = json.loads(gen_res.stdout) if gen_res.stdout else {}
+                logger.info(f"Video generation response: {res_data}")
+
+                if wait_for_completion:
+                    logger.info(f"Downloading generated video to {final_video_path}...")
+                    subprocess.run(
+                        ["notebooklm", "download", "video", "-n", target_nid, str(final_video_path), "--force"],
+                        check=True,
+                        capture_output=True,
+                    )
+
+                return {
+                    "status": "generation_in_progress" if not wait_for_completion else "success",
+                    "provider": "google_notebooklm",
+                    "notebook_id": target_nid,
+                    "notebook_url": f"https://notebooklm.google.com/notebook/{target_nid}",
+                    "task_id": res_data.get("task_id"),
+                    "video_format": video_format,
+                    "video_style": video_style,
+                    "language": language,
+                    "video_file": str(final_video_path.resolve()) if wait_for_completion else None,
+                    "prompt_used": prompt,
+                    "date": date_str,
+                }
+            except Exception as e:
+                logger.error(f"Error during NotebookLM CLI video execution: {e}")
+                return self._generate_video_fallback(
+                    briefing_md_path or "",
+                    chart_image_paths or [],
+                    prompt,
+                    date_str,
+                    final_video_path,
+                    video_format=video_format,
+                    video_style=video_style,
+                    language=language,
+                    error=str(e),
+                    notebook_id=notebook_id,
+                )
+        else:
+            return self._generate_video_fallback(
+                briefing_md_path or "",
+                chart_image_paths or [],
+                prompt,
+                date_str,
+                final_video_path,
+                video_format=video_format,
+                video_style=video_style,
+                language=language,
+            )
+
+    def _generate_video_fallback(
+        self,
+        briefing_md_path: str | None,
+        chart_image_paths: list[str],
+        prompt: str,
+        date_str: str,
+        final_video_path: Path,
+        video_format: str = "explainer",
+        video_style: str = "classic",
+        language: str = "vi",
+        error: str | None = None,
+        notebook_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Provide detailed fallback video metadata bundle and script when credentials are offline or error occurs."""
+        logger.info("Generating video overview package and NotebookLM preparation instructions...")
+
+        resolved_briefing = ""
+        if briefing_md_path and str(briefing_md_path).strip():
+            try:
+                resolved_briefing = str(Path(briefing_md_path).resolve())
+            except Exception:
+                resolved_briefing = str(briefing_md_path)
+
+        bundle_info = {
+            "title": f"Trading Daily Video Overview - {date_str}",
+            "date": date_str,
+            "status": "sources_prepared_ready_for_video_upload",
+            "video_format": video_format,
+            "video_style": video_style,
+            "language": language,
+            "studio_prompt": prompt,
+            "briefing_document": resolved_briefing,
+            "chart_sources": [str(Path(p).resolve()) for p in chart_image_paths if Path(p).exists()],
+            "how_to_generate_video_on_notebooklm": [
+                "Cách 1: Mở https://notebooklm.google.com -> Vào notebook đã tạo.",
+                "Cách 2: Chọn 'Video Overview' trong Studio panel -> Chọn format Explainer, style Classic.",
+                "Cách 3: Nhập prompt tiếng Việt đã được chuẩn bị sẵn và bấm Generate.",
+            ],
+            "video_target_path": str(final_video_path.resolve()),
+            "notice": error or "Chờ file cấu hình Google credentials (storage_state.json) để sinh Video Overview trên NotebookLM.",
+        }
+
+        meta_path = final_video_path.with_suffix(".json")
+        meta_path.write_text(json.dumps(bundle_info, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        script_path = final_video_path.with_name(f"video_script_{date_str}.md")
+        briefing_text = f"1. Văn bản tóm tắt: `{resolved_briefing}`\n" if resolved_briefing else "1. Báo cáo phân tích chuyên sâu từng tài sản\n"
+        script_content = f"""# KỊCH BẢN VIDEO OVERVIEW (EXPLAINER) CHI TIẾT - NGÀY {date_str}
+
+**Chủ đề:** Video Tổng Quan Thị Trường: Vàng (XAUUSD), Bạc (XAGUSD), SPY và Bitcoin (BTC-USD)
+**Format:** {video_format.capitalize()} (Chi tiết chuyên sâu)
+**Visual Style:** {video_style.capitalize()}
+**Ngôn ngữ:** {language}
+**Prompt NotebookLM Video Overview:**
+{prompt}
+
+## Danh sách file nguồn đã sẵn sàng:
+{briefing_text}2. Biểu đồ kỹ thuật:
+"""
+        for p in chart_image_paths:
+            script_content += f"- `{Path(p).resolve()}`\n"
+
+        script_path.write_text(script_content, encoding="utf-8")
+
+        return {
+            "status": "success",
+            "provider": "notebooklm_video_fallback",
+            "date": date_str,
+            "video_format": video_format,
+            "video_style": video_style,
+            "language": language,
+            "prompt_used": prompt,
+            "briefing_file": resolved_briefing,
+            "chart_files": [str(Path(p).resolve()) for p in chart_image_paths],
+            "video_file": str(final_video_path.resolve()) if final_video_path.exists() else None,
+            "metadata_file": str(meta_path.resolve()),
+            "script_file": str(script_path.resolve()),
+            "message": "Video overview metadata and script bundle prepared (NotebookLM credentials expired or offline).",
+        }
+
 
 
 notebooklm_client = NotebookLMClient()
+

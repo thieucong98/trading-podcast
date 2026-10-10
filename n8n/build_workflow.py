@@ -27,6 +27,7 @@ summary_js_code = """const settings = $('Global Pipeline Settings').first().json
 const prep = $('Prepare Reports & Charts Concurrently (Bridge AI)').first().json;
 const upload = $('Upload Completed Reports & Charts to NotebookLM').first().json;
 const podcast = $('Generate Vietnamese Studio Audio (NotebookLM)').first().json;
+const video = $('Generate Video Overview (NotebookLM)').first().json;
 
 return [{
   json: {
@@ -45,7 +46,11 @@ return [{
       chart_images_count: upload.chart_sources_count || (prep.charts ? prep.charts.length : (prep.chart_files ? prep.chart_files.length : 0)),
       sources: upload.sources,
       studio_generation_status: podcast.status,
-      studio_task_id: podcast.task_id
+      studio_task_id: podcast.task_id,
+      video_generation_status: video.status,
+      video_task_id: video.task_id,
+      video_format: video.video_format,
+      video_style: video.video_style
     },
     llm_config: {
       provider: settings.llm_provider,
@@ -250,7 +255,25 @@ workflow = {
                         {
                             "id": "setting-podcast-prompt",
                             "name": "podcast_prompt",
-                            "value": podcast_prompt_text,
+                            "value": "={{ $json?.podcast_prompt || $json?.body?.podcast_prompt || $json?.query?.podcast_prompt || " + json.dumps(podcast_prompt_text) + " }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "setting-video-prompt",
+                            "name": "video_prompt",
+                            "value": "={{ $json?.video_prompt || $json?.body?.video_prompt || $json?.query?.video_prompt || " + json.dumps(podcast_prompt_text) + " }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "setting-video-format",
+                            "name": "video_format",
+                            "value": "={{ $json?.video_format || $json?.body?.video_format || $json?.query?.video_format || 'explainer' }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "setting-video-style",
+                            "name": "video_style",
+                            "value": "={{ $json?.video_style || $json?.body?.video_style || $json?.query?.video_style || 'classic' }}",
                             "type": "string"
                         }
                     ]
@@ -323,13 +346,31 @@ workflow = {
         },
         {
             "parameters": {
+                "method": "POST",
+                "url": "http://trading-podcast-bridge:8010/api/notebooklm/generate-video",
+                "sendBody": True,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"notebook_id\": {{ JSON.stringify($('Upload Completed Reports & Charts to NotebookLM').first().json.notebook_id) }},\n  \"custom_prompt\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_prompt) }},\n  \"video_format\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_format) }},\n  \"video_style\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_style) }},\n  \"language\": \"vi\",\n  \"wait_for_completion\": false\n}",
+                "options": {
+                    "timeout": 600000
+                }
+            },
+            "id": "http-generate-video",
+            "name": "Generate Video Overview (NotebookLM)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [2100, 440],
+            "retryOnFail": False
+        },
+        {
+            "parameters": {
                 "jsCode": summary_js_code
             },
             "id": "summary-node-1",
             "name": "Pipeline Summary & Artifacts",
             "type": "n8n-nodes-base.code",
             "typeVersion": 2,
-            "position": [2100, 440]
+            "position": [2500, 440]
         }
     ],
     "connections": {
@@ -444,6 +485,17 @@ workflow = {
             ]
         },
         "Generate Vietnamese Studio Audio (NotebookLM)": {
+            "main": [
+                [
+                    {
+                        "node": "Generate Video Overview (NotebookLM)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Generate Video Overview (NotebookLM)": {
             "main": [
                 [
                     {

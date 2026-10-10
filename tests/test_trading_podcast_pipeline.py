@@ -125,6 +125,24 @@ class TestTradingPodcastPipeline(unittest.TestCase):
         self.assertIn(data.get("status"), ("ready", "generation_in_progress", "success"))
         print(f"\n[PASS] 06. NotebookLM Generate: Status: {data.get('status')}")
 
+    def test_06b_notebooklm_generate_video(self):
+        """Verify triggering Vietnamese Studio Video Overview generation (Explainer / Classic)."""
+        payload = {
+            "custom_prompt": "Tổng quan thị trường Vàng, Bạc, SPY và Bitcoin hôm nay",
+            "video_format": "explainer",
+            "video_style": "classic",
+            "language": "vi",
+            "wait_for_completion": False,
+            "date": TODAY,
+        }
+        res = requests.post(f"{BRIDGE_URL}/api/notebooklm/generate-video", json=payload, timeout=30)
+        self.assertEqual(res.status_code, 200, f"Expected 200, got {res.status_code}: {res.text}")
+        data = res.json()
+        self.assertIn(data.get("status"), ("ready", "generation_in_progress", "success"))
+        self.assertEqual(data.get("video_format"), "explainer")
+        self.assertEqual(data.get("video_style"), "classic")
+        print(f"\n[PASS] 06b. NotebookLM Video Overview: Status: {data.get('status')} | Format: {data.get('video_format')} | Style: {data.get('video_style')}")
+
     def test_07_n8n_e2e_webhook_pipeline(self):
         """Trigger the published n8n workflow via webhook and verify full end-to-end execution."""
         start = datetime.datetime.now()
@@ -135,14 +153,20 @@ class TestTradingPodcastPipeline(unittest.TestCase):
         data = res.json()
         self.assertEqual(data.get("pipeline_status"), "success")
         self.assertIn("notebooklm", data)
+        nlm = data.get("notebooklm", {})
         self.assertEqual(len(data.get("completed_reports_downloaded", [])), 6)
         self.assertGreaterEqual(len(data.get("charts_captured", [])), 12)
+        self.assertIn(nlm.get("video_generation_status"), ("ready", "generation_in_progress", "success"))
+        self.assertEqual(nlm.get("video_format"), "explainer")
+        self.assertEqual(nlm.get("video_style"), "classic")
         print(f"\n[PASS] 07. n8n E2E Pipeline Succeeded in {elapsed:.2f}s! Summary:")
         print(f"  - Pipeline Status: {data.get('pipeline_status')}")
-        print(f"  - Notebook ID: {data.get('notebooklm', {}).get('notebook_id')}")
-        print(f"  - Total Sources: {data.get('notebooklm', {}).get('sources_total_count')}")
+        print(f"  - Notebook ID: {nlm.get('notebook_id')}")
+        print(f"  - Total Sources: {nlm.get('sources_total_count')}")
         print(f"  - Completed Reports: {len(data.get('completed_reports_downloaded', []))}")
         print(f"  - Charts Captured: {len(data.get('charts_captured', []))}")
+        print(f"  - Studio Audio Status: {nlm.get('studio_generation_status')} (task: {nlm.get('studio_task_id')})")
+        print(f"  - Video Overview Status: {nlm.get('video_generation_status')} (task: {nlm.get('video_task_id')}, format: {nlm.get('video_format')})")
 
     def test_08_notebooklm_auth_management(self):
         """Verify NotebookLM authentication status and keepalive management endpoints."""

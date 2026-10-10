@@ -209,7 +209,25 @@
             {
               "id": "setting-podcast-prompt",
               "name": "podcast_prompt",
-              "value": "1. The Main Event: Gold & Silver (GC=F & SI=F):\n\nThis episode is exclusively about Precious Metals. Gold (GC=F) and Silver (SI=F) are the absolute core focus.\n\nSynthesize the reports to break down current price action, momentum, and structural trends for both metals.\n\nDiscuss if Silver is leading or lagging Gold in the current cycle.\n\n2. The Macro Web (Using ^TNX & DX-Y.NYB as drivers):\n\nDo NOT analyze the US Dollar (DX-Y.NYB) or 10-Year Yields (^TNX) as standalone trades.\n\nInstead, analyze them strictly as macro tailwinds or headwinds for the metals. Explain how the current trend in the 10-Year Yield and the Dollar is directly impacting the pricing of GC=F and SI=F (e.g., \"Are rising yields crushing gold, or is gold ignoring the strong dollar?\").\n\n3. Risk Sentiment Rotation (Using SPY & BTC-USD):\n\nUse the SPY (Equities) and BTC-USD (Crypto) data purely as risk-appetite barometers.\n\nEvaluate the capital flow: Are we seeing a \"risk-on\" environment where capital flows to SPY/BTC, or a \"risk-off\" environment where traders are seeking safe-haven rotation into Gold and Silver?\n\n4. The 'Trade Desk' Action Plan (Crucial Segment):\n\nDedicate the final 3-4 minutes to actionable trade setups.\n\nExtract and clearly announce the specific potential entry zones, key support/resistance levels, and invalidation points (stop losses) for GC=F and SI=F based EXACTLY on the provided reports.\n\nFrame these levels confidently, like a senior trader giving a playbook to their desk. (e.g., \"For Gold, the desk is looking at a high-probability entry around [Price]...\").",
+              "value": "={{ $json?.podcast_prompt || $json?.body?.podcast_prompt || $json?.query?.podcast_prompt || \"1. The Main Event: Gold & Silver (GC=F & SI=F):\\n\\nThis episode is exclusively about Precious Metals. Gold (GC=F) and Silver (SI=F) are the absolute core focus.\\n\\nSynthesize the reports to break down current price action, momentum, and structural trends for both metals.\\n\\nDiscuss if Silver is leading or lagging Gold in the current cycle.\\n\\n2. The Macro Web (Using ^TNX & DX-Y.NYB as drivers):\\n\\nDo NOT analyze the US Dollar (DX-Y.NYB) or 10-Year Yields (^TNX) as standalone trades.\\n\\nInstead, analyze them strictly as macro tailwinds or headwinds for the metals. Explain how the current trend in the 10-Year Yield and the Dollar is directly impacting the pricing of GC=F and SI=F (e.g., \\\"Are rising yields crushing gold, or is gold ignoring the strong dollar?\\\").\\n\\n3. Risk Sentiment Rotation (Using SPY & BTC-USD):\\n\\nUse the SPY (Equities) and BTC-USD (Crypto) data purely as risk-appetite barometers.\\n\\nEvaluate the capital flow: Are we seeing a \\\"risk-on\\\" environment where capital flows to SPY/BTC, or a \\\"risk-off\\\" environment where traders are seeking safe-haven rotation into Gold and Silver?\\n\\n4. The 'Trade Desk' Action Plan (Crucial Segment):\\n\\nDedicate the final 3-4 minutes to actionable trade setups.\\n\\nExtract and clearly announce the specific potential entry zones, key support/resistance levels, and invalidation points (stop losses) for GC=F and SI=F based EXACTLY on the provided reports.\\n\\nFrame these levels confidently, like a senior trader giving a playbook to their desk. (e.g., \\\"For Gold, the desk is looking at a high-probability entry around [Price]...\\\").\" }}",
+              "type": "string"
+            },
+            {
+              "id": "setting-video-prompt",
+              "name": "video_prompt",
+              "value": "={{ $json?.video_prompt || $json?.body?.video_prompt || $json?.query?.video_prompt || \"1. The Main Event: Gold & Silver (GC=F & SI=F):\\n\\nThis episode is exclusively about Precious Metals. Gold (GC=F) and Silver (SI=F) are the absolute core focus.\\n\\nSynthesize the reports to break down current price action, momentum, and structural trends for both metals.\\n\\nDiscuss if Silver is leading or lagging Gold in the current cycle.\\n\\n2. The Macro Web (Using ^TNX & DX-Y.NYB as drivers):\\n\\nDo NOT analyze the US Dollar (DX-Y.NYB) or 10-Year Yields (^TNX) as standalone trades.\\n\\nInstead, analyze them strictly as macro tailwinds or headwinds for the metals. Explain how the current trend in the 10-Year Yield and the Dollar is directly impacting the pricing of GC=F and SI=F (e.g., \\\"Are rising yields crushing gold, or is gold ignoring the strong dollar?\\\").\\n\\n3. Risk Sentiment Rotation (Using SPY & BTC-USD):\\n\\nUse the SPY (Equities) and BTC-USD (Crypto) data purely as risk-appetite barometers.\\n\\nEvaluate the capital flow: Are we seeing a \\\"risk-on\\\" environment where capital flows to SPY/BTC, or a \\\"risk-off\\\" environment where traders are seeking safe-haven rotation into Gold and Silver?\\n\\n4. The 'Trade Desk' Action Plan (Crucial Segment):\\n\\nDedicate the final 3-4 minutes to actionable trade setups.\\n\\nExtract and clearly announce the specific potential entry zones, key support/resistance levels, and invalidation points (stop losses) for GC=F and SI=F based EXACTLY on the provided reports.\\n\\nFrame these levels confidently, like a senior trader giving a playbook to their desk. (e.g., \\\"For Gold, the desk is looking at a high-probability entry around [Price]...\\\").\" }}",
+              "type": "string"
+            },
+            {
+              "id": "setting-video-format",
+              "name": "video_format",
+              "value": "={{ $json?.video_format || $json?.body?.video_format || $json?.query?.video_format || 'explainer' }}",
+              "type": "string"
+            },
+            {
+              "id": "setting-video-style",
+              "name": "video_style",
+              "value": "={{ $json?.video_style || $json?.body?.video_style || $json?.query?.video_style || 'classic' }}",
               "type": "string"
             }
           ]
@@ -294,14 +312,35 @@
     },
     {
       "parameters": {
-        "jsCode": "const settings = $('Global Pipeline Settings').first().json;\nconst prep = $('Prepare Reports & Charts Concurrently (Bridge AI)').first().json;\nconst upload = $('Upload Completed Reports & Charts to NotebookLM').first().json;\nconst podcast = $('Generate Vietnamese Studio Audio (NotebookLM)').first().json;\n\nreturn [{\n  json: {\n    pipeline_status: \"success\",\n    execution_time: new Date().toISOString(),\n    caching_mode: {\n      force_reanalyze: settings.force_reanalyze,\n      force_recapture_charts: settings.force_recapture_charts\n    },\n    notebooklm: {\n      notebook_id: upload.notebook_id,\n      notebook_title: upload.notebook_title,\n      notebook_url: upload.notebook_url,\n      sources_total_count: upload.sources_count,\n      completed_reports_count: upload.report_sources_count || (prep.report_files ? prep.report_files.length : 0),\n      chart_images_count: upload.chart_sources_count || (prep.charts ? prep.charts.length : (prep.chart_files ? prep.chart_files.length : 0)),\n      sources: upload.sources,\n      studio_generation_status: podcast.status,\n      studio_task_id: podcast.task_id\n    },\n    llm_config: {\n      provider: settings.llm_provider,\n      deep_think_llm: settings.deep_think_llm,\n      quick_think_llm: settings.quick_think_llm,\n      debate_rounds: settings.max_debate_rounds,\n      risk_rounds: settings.max_risk_discuss_rounds,\n      language: settings.output_language\n    },\n    completed_reports_downloaded: prep.report_files || [],\n    charts_captured: prep.charts ? prep.charts.map(c => c.filename) : (prep.chart_files || [])\n  }\n}];"
+        "method": "POST",
+        "url": "http://trading-podcast-bridge:8010/api/notebooklm/generate-video",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"notebook_id\": {{ JSON.stringify($('Upload Completed Reports & Charts to NotebookLM').first().json.notebook_id) }},\n  \"custom_prompt\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_prompt) }},\n  \"video_format\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_format) }},\n  \"video_style\": {{ JSON.stringify($('Global Pipeline Settings').first().json.video_style) }},\n  \"language\": \"vi\",\n  \"wait_for_completion\": false\n}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "http-generate-video",
+      "name": "Generate Video Overview (NotebookLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        440
+      ],
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = $('Global Pipeline Settings').first().json;\nconst prep = $('Prepare Reports & Charts Concurrently (Bridge AI)').first().json;\nconst upload = $('Upload Completed Reports & Charts to NotebookLM').first().json;\nconst podcast = $('Generate Vietnamese Studio Audio (NotebookLM)').first().json;\nconst video = $('Generate Video Overview (NotebookLM)').first().json;\n\nreturn [{\n  json: {\n    pipeline_status: \"success\",\n    execution_time: new Date().toISOString(),\n    caching_mode: {\n      force_reanalyze: settings.force_reanalyze,\n      force_recapture_charts: settings.force_recapture_charts\n    },\n    notebooklm: {\n      notebook_id: upload.notebook_id,\n      notebook_title: upload.notebook_title,\n      notebook_url: upload.notebook_url,\n      sources_total_count: upload.sources_count,\n      completed_reports_count: upload.report_sources_count || (prep.report_files ? prep.report_files.length : 0),\n      chart_images_count: upload.chart_sources_count || (prep.charts ? prep.charts.length : (prep.chart_files ? prep.chart_files.length : 0)),\n      sources: upload.sources,\n      studio_generation_status: podcast.status,\n      studio_task_id: podcast.task_id,\n      video_generation_status: video.status,\n      video_task_id: video.task_id,\n      video_format: video.video_format,\n      video_style: video.video_style\n    },\n    llm_config: {\n      provider: settings.llm_provider,\n      deep_think_llm: settings.deep_think_llm,\n      quick_think_llm: settings.quick_think_llm,\n      debate_rounds: settings.max_debate_rounds,\n      risk_rounds: settings.max_risk_discuss_rounds,\n      language: settings.output_language\n    },\n    completed_reports_downloaded: prep.report_files || [],\n    charts_captured: prep.charts ? prep.charts.map(c => c.filename) : (prep.chart_files || [])\n  }\n}];"
       },
       "id": "summary-node-1",
       "name": "Pipeline Summary & Artifacts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2100,
+        2500,
         440
       ]
     }
@@ -418,6 +457,17 @@
       ]
     },
     "Generate Vietnamese Studio Audio (NotebookLM)": {
+      "main": [
+        [
+          {
+            "node": "Generate Video Overview (NotebookLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Video Overview (NotebookLM)": {
       "main": [
         [
           {

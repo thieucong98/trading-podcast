@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 import requests
 
 from .chart_capturer import capture_tradingview_charts
-from .notebooklm_client import DEFAULT_VIETNAMESE_PROMPT, notebooklm_client
+from .notebooklm_client import DEFAULT_VIETNAMESE_PROMPT, DEFAULT_VIETNAMESE_VIDEO_PROMPT, notebooklm_client
 from .report_aggregator import build_podcast_briefing_markdown
 from .video_engine import VideoAssemblyEngine
 from .google_ai_service import (
@@ -153,6 +153,19 @@ class PodcastGenerateRequest(BaseModel):
     custom_prompt: str | None = Field(default=DEFAULT_VIETNAMESE_PROMPT)
     wait_for_completion: bool = False
     date: str | None = None
+
+
+class VideoGenerateRequest(BaseModel):
+    notebook_id: str | None = None
+    briefing_md_path: str | None = None
+    chart_image_paths: list[str] = Field(default=[])
+    custom_prompt: str | None = Field(default=DEFAULT_VIETNAMESE_VIDEO_PROMPT)
+    video_format: str = Field(default="explainer", description="explainer, brief, cinematic, short")
+    video_style: str = Field(default="classic", description="classic, auto, whiteboard, custom, etc.")
+    language: str = Field(default="vi", description="Language code e.g. vi")
+    wait_for_completion: bool = False
+    date: str | None = None
+
 
 
 class NotebookLMAuthRefreshRequest(BaseModel):
@@ -299,6 +312,33 @@ async def generate_podcast_endpoint(req: PodcastGenerateRequest):
     except Exception as e:
         logger.error(f"Failed generating podcast: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notebooklm/generate-video")
+async def generate_video_endpoint(req: VideoGenerateRequest):
+    """Trigger Google NotebookLM Studio Video Overview generation (Explainer / Classic / Vietnamese)."""
+    logger.info(
+        f"Generating Video Overview via NotebookLM Studio (notebook_id={req.notebook_id}, "
+        f"format={req.video_format}, style={req.video_style})..."
+    )
+    try:
+        result = await notebooklm_client.generate_video_studio(
+            notebook_id=req.notebook_id,
+            briefing_md_path=req.briefing_md_path,
+            chart_image_paths=req.chart_image_paths,
+            custom_prompt=req.custom_prompt,
+            video_format=req.video_format,
+            video_style=req.video_style,
+            language=req.language,
+            wait_for_completion=req.wait_for_completion,
+            date_str=req.date,
+            output_dir=VIDEOS_DIR,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Failed generating video overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/api/notebooklm/auth/status")
