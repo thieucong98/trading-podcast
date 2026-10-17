@@ -4,13 +4,13 @@ services:
     container_name: trading-podcast-n8n
     restart: unless-stopped
     ports:
-      - "0.0.0.0:5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/
+      - WEBHOOK_URL=http://podcast.168.107.91.121.nip.io/
       - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
       - TZ=Asia/Ho_Chi_Minh
       - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
@@ -35,7 +35,7 @@ services:
     container_name: trading-podcast-bridge
     restart: unless-stopped
     ports:
-      - "0.0.0.0:8010:8010"
+      - "127.0.0.1:8010:8010"
     environment:
       - OUTPUT_DIR=/app/output
       - NOTEBOOKLM_STORAGE_STATE=/app/storage_state.json
@@ -49,6 +49,7 @@ services:
       - DEFAULT_DEEP_THINK_LLM=ag/gemini-3.8-flash-high
       - DEFAULT_QUICK_THINK_LLM=ag/gemini-3.8-flash-high
       - TRADINGAGENTS_BACKEND_URL=http://tradingagents-backend:8000
+      - TRADINGAGENTS_INTERNAL_TOKEN=${TRADINGAGENTS_INTERNAL_TOKEN:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - FAL_KEY=${FAL_KEY:-}

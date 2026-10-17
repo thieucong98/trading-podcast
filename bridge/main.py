@@ -458,15 +458,25 @@ async def notebooklm_master_token_remint_endpoint():
     return res
 
 
+def _get_tradingagents_headers() -> dict[str, str]:
+    headers = {}
+    token = os.getenv("TRADINGAGENTS_INTERNAL_TOKEN", "").strip()
+    if token:
+        headers["X-Internal-Token"] = token
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _clean_ticker(ticker: str) -> str:
     return ticker.replace("^", "").replace("/", "_").replace(":", "_").strip()
 
 
 def _download_report_markdown(base_url: str, job_id: str) -> str | None:
     """Download the complete raw markdown report from TradingAgents backend."""
+    headers = _get_tradingagents_headers()
     try:
         url = f"{base_url}/api/v1/reports/{job_id}/download?tab=complete"
-        res = requests.get(url, timeout=20)
+        res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200 and len(res.text.strip()) > 1000:
             return res.text.strip()
     except Exception as e:
@@ -474,7 +484,7 @@ def _download_report_markdown(base_url: str, job_id: str) -> str | None:
 
     try:
         url = f"{base_url}/api/v1/reports/{job_id}"
-        res = requests.get(url, timeout=20)
+        res = requests.get(url, headers=headers, timeout=20)
         if res.status_code == 200:
             data = res.json()
             full_md = data.get("complete_report_md")
@@ -500,10 +510,11 @@ async def _poll_job_until_done(
     elapsed = 0
     last_stage = None
     last_progress = None
+    headers = _get_tradingagents_headers()
 
     while elapsed < max_wait_seconds:
         try:
-            poll_res = await asyncio.to_thread(requests.get, f"{base_url}/api/v1/jobs/{job_id}", timeout=10)
+            poll_res = await asyncio.to_thread(requests.get, f"{base_url}/api/v1/jobs/{job_id}", headers=headers, timeout=10)
             if poll_res.status_code == 200:
                 job_info = poll_res.json()
                 st = job_info.get("status")
@@ -554,7 +565,8 @@ async def _execute_ticker_analysis(
         if not current_job_id:
             logger.info(f"[{ticker}] Starting new analysis job (attempt {attempts + 1}/{max_retries + 1})...")
             try:
-                res = await asyncio.to_thread(requests.post, f"{base_url}/api/v1/jobs", json=job_payload, timeout=20)
+                headers = _get_tradingagents_headers()
+                res = await asyncio.to_thread(requests.post, f"{base_url}/api/v1/jobs", json=job_payload, headers=headers, timeout=20)
                 if res.status_code in (200, 201):
                     current_job_id = res.json().get("id")
                     logger.info(f"[{ticker}] Spawned Job ID: {current_job_id}")
@@ -672,7 +684,8 @@ async def analyze_markets_endpoint(req: MarketAnalysisRequest):
     existing_running: dict[str, dict[str, Any]] = {}
 
     try:
-        jobs_res = requests.get(f"{base_url}/api/v1/jobs?limit=100", timeout=15)
+        headers = _get_tradingagents_headers()
+        jobs_res = requests.get(f"{base_url}/api/v1/jobs?limit=100", headers=headers, timeout=15)
         if jobs_res.status_code == 200:
             all_jobs = jobs_res.json().get("jobs", [])
             for job in all_jobs:
