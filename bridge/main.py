@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -376,6 +376,54 @@ async def notebooklm_auth_import_cookies_endpoint(req: NotebookLMAuthImportReque
     return res
 
 
+@app.post("/api/notebooklm/auth/storage-state")
+async def update_storage_state_endpoint(request: Request):
+    """Update storage_state.json and default profile session credentials.
+    Supports 2 options:
+    1. File upload: If a file is uploaded (multipart/form-data with 'file' or 'storage_state_file'),
+       reads and imports content from the file.
+    2. Input content: If no file is provided, extracts data from 'content' (or 'cookies')
+       from either form-data or JSON payload.
+    """
+    logger.info("Received request to update storage_state.json...")
+    content_type = request.headers.get("content-type", "")
+    raw_input: Any = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        uploaded_file = form.get("file") or form.get("storage_state_file")
+        if uploaded_file and hasattr(uploaded_file, "read"):
+            file_bytes = await uploaded_file.read()
+            raw_input = file_bytes.decode("utf-8")
+        elif "content" in form or "cookies" in form:
+            raw_input = form.get("content") or form.get("cookies")
+    elif "application/json" in content_type:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                raw_input = body.get("content") or body.get("cookies") or body
+            else:
+                raw_input = body
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {e}")
+    else:
+        # Fallback for text/plain or raw body
+        raw_body = await request.body()
+        if raw_body:
+            raw_input = raw_body.decode("utf-8")
+
+    if not raw_input:
+        raise HTTPException(
+            status_code=400,
+            detail="No valid input provided. Please upload a 'file' or provide 'content' text/json.",
+        )
+
+    res = await asyncio.to_thread(notebooklm_client.import_cookies, raw_input)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Failed to import storage state."))
+    return res
+
+
 @app.get("/api/notebooklm/auth/master-token/status")
 async def notebooklm_master_token_status_endpoint():
     """Get non-sensitive status of the durable Google Master Token."""
@@ -558,13 +606,54 @@ async def _execute_ticker_analysis(
     raise RuntimeError(f"Analysis failed for {ticker} after {max_retries + 1} attempts. Last error: {error_msg}")
 
 
+def resolve_tradingagents_url(target_url: str) -> str:
+    """If target_url is unreachable (e.g. tradingagents-backend DNS fails),
+    try host.docker.internal:8000 or localhost:8000.
+    """
+    candidates = [
+        target_url,
+        os.getenv("TRADINGAGENTS_BACKEND_URL", ""),
+        "http://tradingagents-backend:8000",
+        "http://host.docker.internal:8000",
+        "http://localhost:8000",
+    ]
+    for url in candidates:
+        if not url:
+            continue
+        clean = url.rstrip("/")
+        try:
+            r = requests.get(f"{clean}/health", timeout=1.5)
+            if r.status_code == 200:
+                return clean
+        except Exception:
+            continue
+    return target_url.rstrip("/")
+
+
+def resolve_pipeline_date(req_date: str | None, force_reanalyze: bool = False) -> str:
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    if req_date and req_date.strip():
+        return req_date.strip()
+    if force_reanalyze:
+        return today_str
+    # Auto-detect latest available market trading day if today has no completed reports (e.g. weekends/holidays)
+    if any(REPORTS_DIR.glob(f"TradingAgents_*_{today_str}_Complete.md")):
+        return today_str
+    dates = []
+    for f in REPORTS_DIR.glob("TradingAgents_*_*_Complete.md"):
+        parts = f.stem.split("_")
+        if len(parts) >= 3 and parts[-1] == "Complete" and len(parts[-2]) == 10:
+            dates.append(parts[-2])
+    return max(dates) if dates else today_str
+
+
 @app.post("/api/pipeline/analyze-markets")
 async def analyze_markets_endpoint(req: MarketAnalysisRequest):
     """Trigger TradingAgents jobs for tickers and poll for completion (granular step).
     Strictly verifies all reports - NEVER produces fake/dummy placeholder files.
     """
-    today = req.date or datetime.datetime.now().strftime("%Y-%m-%d")
-    base_url = req.tradingagents_backend_url.rstrip("/")
+    today = resolve_pipeline_date(req.date, req.force_reanalyze)
+    base_url = resolve_tradingagents_url(req.tradingagents_backend_url)
 
     provider = req.llm_provider or os.getenv("DEFAULT_LLM_PROVIDER", "openai_compatible")
     deep_model = req.deep_think_llm or os.getenv("DEFAULT_DEEP_THINK_LLM", "ag/gemini-3.8-flash-high")
@@ -753,7 +842,7 @@ async def pipeline_prepare_assets_endpoint(req: PipelinePrepareAssetsRequest):
     """Concurrently prepare both market analysis reports and TradingView charts in parallel.
     Guarantees analysis and chart capture execute simultaneously on the event loop.
     """
-    today = req.date or datetime.datetime.now().strftime("%Y-%m-%d")
+    today = resolve_pipeline_date(req.date, req.force_reanalyze)
     logger.info(
         f"Concurrent pipeline asset preparation started: tickers={req.tickers}, "
         f"chart_symbols={req.chart_symbols}, force_reanalyze={req.force_reanalyze}, "
@@ -831,7 +920,7 @@ async def run_full_pipeline(req: FullPipelineRequest):
     2. Uploads verified sources to Google NotebookLM
     3. Triggers Vietnamese Studio Audio generation
     """
-    today = req.date or datetime.datetime.now().strftime("%Y-%m-%d")
+    today = resolve_pipeline_date(req.date, req.force_reanalyze)
     logger.info(f"Starting Full Trading Podcast Pipeline for date: {today}")
 
     # 1 & 2. Run market analysis and chart capture CONCURRENTLY

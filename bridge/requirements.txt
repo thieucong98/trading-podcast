@@ -9,3 +9,4 @@ notebooklm-py[cookies,headless]>=0.8.2
 gpsoauth>=2.0.0
 pycryptodomex>=3.23.0
 gTTS>=2.5.0
+python-multipart>=0.0.12

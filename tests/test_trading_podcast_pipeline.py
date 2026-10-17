@@ -4,16 +4,32 @@ zero dummy fallback guarantee, TradingView chart captures, and NotebookLM integr
 """
 
 import datetime
+import io
+import json
 from pathlib import Path
 import unittest
 import requests
 
 BRIDGE_URL = "http://localhost:8010"
 N8N_WEBHOOK_URL = "http://localhost:5678/webhook/run-trading-podcast"
-TODAY = datetime.datetime.now().strftime("%Y-%m-%d")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = PROJECT_ROOT / "output" / "reports"
 CHARTS_DIR = PROJECT_ROOT / "output" / "charts"
+
+
+def find_latest_report_date() -> str:
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    if any(REPORTS_DIR.glob(f"TradingAgents_*_{today_str}_Complete.md")):
+        return today_str
+    dates = []
+    for f in REPORTS_DIR.glob("TradingAgents_*_*_Complete.md"):
+        parts = f.stem.split("_")
+        if len(parts) >= 3 and parts[-1] == "Complete":
+            dates.append(parts[-2])
+    return max(dates) if dates else today_str
+
+
+TODAY = find_latest_report_date()
 
 EXPECTED_TICKERS = ["XAUUSD", "SPY", "BTC-USD", "XAGUSD", "^TNX", "DX-Y.NYB"]
 
@@ -62,6 +78,7 @@ class TestTradingPodcastPipeline(unittest.TestCase):
             "max_debate_rounds": 3,
             "max_risk_discuss_rounds": 3,
             "output_language": "Vietnamese",
+            "date": TODAY,
         }
         start = datetime.datetime.now()
         res = requests.post(f"{BRIDGE_URL}/api/pipeline/analyze-markets", json=payload, timeout=10)
@@ -146,7 +163,7 @@ class TestTradingPodcastPipeline(unittest.TestCase):
     def test_07_n8n_e2e_webhook_pipeline(self):
         """Trigger the published n8n workflow via webhook and verify full end-to-end execution."""
         start = datetime.datetime.now()
-        res = requests.get(N8N_WEBHOOK_URL, timeout=240)
+        res = requests.get(f"{N8N_WEBHOOK_URL}?date={TODAY}", timeout=240)
         elapsed = (datetime.datetime.now() - start).total_seconds()
 
         self.assertEqual(res.status_code, 200, f"Webhook execution failed with {res.status_code}: {res.text}")
@@ -194,6 +211,53 @@ class TestTradingPodcastPipeline(unittest.TestCase):
         print(f"  - Keepalive Task: active={keepalive.get('task_active')}, interval={keepalive.get('interval_seconds')}s")
         print(f"  - Refresh Output: status={ref_data.get('status')}")
 
+    def test_09_storage_state_update_api_and_form(self):
+        """Verify the new POST /api/notebooklm/auth/storage-state endpoint (file + content) and n8n Form UI."""
+        # 1. Test empty request returns 400
+        empty_res = requests.post(f"{BRIDGE_URL}/api/notebooklm/auth/storage-state", json={}, timeout=10)
+        self.assertEqual(empty_res.status_code, 400, f"Expected 400 for empty body, got {empty_res.status_code}")
+
+        # 2. Test JSON payload with content string
+        sample_cookie_json = json.dumps({
+            "cookies": [
+                {"name": "SID", "value": "test_sid_val", "domain": ".google.com", "path": "/"}
+            ]
+        })
+        json_res = requests.post(
+            f"{BRIDGE_URL}/api/notebooklm/auth/storage-state",
+            json={"content": sample_cookie_json},
+            timeout=15,
+        )
+        self.assertEqual(json_res.status_code, 200, f"Expected 200 for JSON content, got {json_res.status_code}: {json_res.text}")
+        json_data = json_res.json()
+        self.assertEqual(json_data.get("status"), "success")
+        self.assertGreaterEqual(json_data.get("imported_cookies_count", 0), 1)
+
+        # 3. Test Multipart file upload
+        file_bytes = io.BytesIO(sample_cookie_json.encode("utf-8"))
+        multipart_res = requests.post(
+            f"{BRIDGE_URL}/api/notebooklm/auth/storage-state",
+            files={"file": ("storage_state.json", file_bytes, "application/json")},
+            timeout=15,
+        )
+        self.assertEqual(multipart_res.status_code, 200, f"Expected 200 for file upload, got {multipart_res.status_code}: {multipart_res.text}")
+        multipart_data = multipart_res.json()
+        self.assertEqual(multipart_data.get("status"), "success")
+        self.assertGreaterEqual(multipart_data.get("imported_cookies_count", 0), 1)
+
+        # 4. Verify n8n Form UI endpoint is live and accessible
+        n8n_form_url = "http://localhost:5678/form/update-storage-state"
+        form_res = requests.get(n8n_form_url, timeout=10)
+        self.assertEqual(form_res.status_code, 200, f"Expected 200 for n8n Form UI, got {form_res.status_code}")
+        self.assertIn("NotebookLM Auth", form_res.text)
+
+        print("\n[PASS] 09. Storage State Update API & n8n Form UI:")
+        print(f"  - Empty Validation 400 : PASS")
+        print(f"  - JSON Content POST    : PASS (cookies={json_data.get('imported_cookies_count')})")
+        print(f"  - Multipart File Upload: PASS (cookies={multipart_data.get('imported_cookies_count')})")
+        print(f"  - n8n Form UI Endpoint : PASS (URL={n8n_form_url})")
+
 
 if __name__ == "__main__":
     unittest.main()
+
